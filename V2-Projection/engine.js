@@ -7,13 +7,29 @@ const height = window.innerHeight;
 canvas.width = width - 50;
 canvas.height = height - 50;
 
+
+//Variable pour la projection
+const zfar = 1;
+const znear = 1000;
+const fov = 90;
+const aspectRatio = height/width;
+const fovRad = 1/Math.tan(fov*0.5/180*Math.PI);
+
+
 //Definition de mes classes de base
 
+class Vector3D{
+    constructor(x, y, z) {
+       this.x = x;
+       this.y = y;
+       this.z = z;
+    }
+}
 
 //Le triangle est la forme 2D la plus simple permetant donc de représenter n'importe quelle forme
 class Triangle {
     constructor(p1, p2, p3) {
-        this.p = [p1, p2, p3];
+        this.pos = [p1, p2, p3];
     }
 }
 
@@ -29,46 +45,46 @@ class CubeMesh {
         this.mesh = new Mesh();
     }
 
-    create(base=[0,0,0], longueur=1, largeur=1, profondeur=1) {
-        let cube = new Mesh();
+    create(base=[0,0,0], longueur=100, largeur=100, profondeur=1) {
         let x = base[0];
         let y = base[1];
         let z = base[2];
         longueur = x + longueur;
         largeur = y + largeur;
         profondeur = z + profondeur;
-        cube.pos = [
+        cube = [
             //Devant
-            new Triangle([x, y, z], [x, largeur, z], [longueur, largeur, z]),
-            new Triangle([x, y, z], [longueur, largeur, z], [longueur, y, z]),
-
-            //Derrière
-            new Triangle([longueur, y, profondeur], [longueur, largeur, profondeur], [x, largeur, profondeur]),
-            new Triangle([longueur, y, profondeur], [x, largeur, profondeur], [x, y, profondeur]),
-
-            //Gauche
-            new Triangle([longueur, y, z], [longueur, largeur, z], [longueur, largeur, profondeur]),
-            new Triangle([longueur, y, z], [longueur, largeur, profondeur], [longueur, y, profondeur]),
-
-            //Droite
-            new Triangle([x, y, profondeur], [x, largeur, profondeur], [x, largeur, z]),
-            new Triangle([x, y, profondeur], [x, largeur, z], [x, y, z]),
-
-            //Haut
-            new Triangle([x, largeur, z], [x, largeur, profondeur], [longueur, largeur, profondeur]),
-            new Triangle([x, largeur, z], [longueur, largeur, profondeur], [longueur, largeur, z]),
-
-            //Bas
-            new Triangle([longueur, y, profondeur], [x, y, profondeur], [x, y, z]),
-            new Triangle([longueur, y, profondeur], [x, y, z], [longueur, y, z]),
+            new Triangle(new Vector3D(x, y, z),new Vector3D(x, largeur, z), new Vector3D(longueur, largeur, z)),
+            new Triangle(new Vector3D(x, y, z),new Vector3D(longueur, largeur, z),new Vector3D(longueur, y, z)),
+        
+            // Derrière
+            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(longueur, largeur, profondeur),new Vector3D(x, largeur, profondeur)),
+            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, largeur, profondeur),new Vector3D(x, y, profondeur)),
+        
+            // Gauche
+            new Triangle(new Vector3D(longueur, y, z),new Vector3D(longueur, largeur, z),new Vector3D(longueur, largeur, profondeur)),
+            new Triangle(new Vector3D(longueur, y, z),new Vector3D(longueur, largeur, profondeur),new Vector3D(longueur, y, profondeur)),
+        
+            // Droite
+            new Triangle(new Vector3D(x, y, profondeur),new Vector3D(x, largeur, profondeur),new Vector3D(x, largeur, z)),
+            new Triangle(new Vector3D(x, y, profondeur),new Vector3D(x, largeur, z),new Vector3D(x, y, z) ),
+        
+            // Haut
+            new Triangle(new Vector3D(x, largeur, z),new Vector3D(x, largeur, profondeur),new Vector3D(longueur, largeur, profondeur)),
+            new Triangle(new Vector3D(x, largeur, z),new Vector3D(longueur, largeur, profondeur),new Vector3D(longueur, largeur, z)),
+        
+            // Bas
+            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, y, profondeur),new Vector3D(x, y, z)),
+            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, y, z),new Vector3D(longueur, y, z))
         ];
-        this.mesh = cube;
+        this.mesh.pos = cube;
+        this.draw();
     }
 
     draw() {
         //@TODO Manque la projection
         for (let triangle of this.mesh.pos) {
-            drawTriangle(triangle);
+            drawTriangle(triangle); 
         }
     }
 }
@@ -116,6 +132,31 @@ function rotation_z(angle) {
     ];
 }
 
+function projection(triangle){
+    projectionMatrix = [
+        [aspectRatio*fovRad,0,0,0],
+        [0,fovRad,0,0],
+        [0,0,zfar/(zfar-znear),1],
+        [0,0,(-zfar*znear)/(zfar-znear),0]
+    ];
+
+    return projectionMatrix;
+
+}
+
+function multiplication(matrice, triangle){
+    o.x = triangle.x * matrice[0][0] + triangle.y * matrice[1][0] + triangle.z * matrice[2][0] + matrice[3][0];
+    o.y = triangle.x * matrice[0][1] + triangle.y * matrice[1][1] + triangle.z * matrice[2][1] + matrice[3][1];
+    o.z = triangle.x * matrice[0][2] + triangle.y * matrice[1][2] + triangle.z * matrice[2][2] + matrice[3][2];
+    w = triangle.x * matrice[0][3] + triangle.y * matrice[1][3] + triangle.z * matrice[2][3] + matrice[3][3];
+
+    if (w !=0.0){
+        o.x /= w; o.y /= w; o.z /w;
+    }
+
+    return o;
+}
+
 function drawCube(triangles) {
     for (let triangle of triangles) {
         drawTriangle(triangle);
@@ -123,6 +164,7 @@ function drawCube(triangles) {
 }
 
 function drawTriangle(triangle) {
+    console.log("Triangle: "+triangle.pos[0].x);
     for (let i = 0; i < 3; i++) {
         let p1 = triangle.pos[i];
         let p2 = triangle.pos[(i + 1) % 3];
@@ -131,5 +173,9 @@ function drawTriangle(triangle) {
         ctx.moveTo(p1.x, p1.y);
         ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
+
     }
 }
+
+let cube = new CubeMesh;
+cube.create();
