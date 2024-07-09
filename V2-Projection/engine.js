@@ -109,28 +109,12 @@ function drawCube(triangles) {
 }
 
 //Matrice de rotation
-function rotation_x(angle) {
+function rotation_x(angle=0.1) {
     return [
         [1, 0, 0, 0],
         [0, Math.cos(angle), Math.sin(angle),0],
         [0, -Math.sin(angle), Math.cos(angle),0],
         [0, 0, 0, 1]
-    ];
-}
-
-function rotation_y(angle) {
-    return [
-        [Math.cos(angle), 0, Math.sin(angle)],
-        [0, 1, 0],
-        [-Math.sin(angle), 0, Math.cos(angle)]
-    ];
-}
-
-function rotation_z(angle) {
-    return [
-        [Math.cos(angle), -Math.sin(angle), 0],
-        [Math.sin(angle), Math.cos(angle), 0],
-        [0, 0, 1]
     ];
 }
 
@@ -143,47 +127,56 @@ function drawTriangle(triangle) {
         [0,0,(-zfar*znear)/(zfar-znear),0]
     ];
 
-    // multiplication(rotation_x(0.6), triangle.pos[0])
-    // multiplication(rotation_x(0.6), triangle.pos[1]);
-    // multiplication(rotation_x(0.6), triangle.pos[2]);
+    //@TODO Y'a un problème avec ma matrice de rotation
+    triangle.pos[0] = multiplication(rotation_x(), triangle.pos[0]);
+    triangle.pos[1] = multiplication(rotation_x(), triangle.pos[1]);
+    triangle.pos[2] = multiplication(rotation_x(), triangle.pos[2]);
 
-    triangle.pos[0].z += 100;
-    triangle.pos[1].z += 100;
-    triangle.pos[2].z += 100;
+    let line1 = new Vector3D(
+        triangle.pos[1].x - triangle.pos[0].x,
+        triangle.pos[1].y - triangle.pos[0].y,
+        triangle.pos[1].z - triangle.pos[0].z
+    );
 
-    for(let tri of triangle.pos){
-        multiplication(projectionMatrix,tri);
-    }
+    let line2 = new Vector3D(
+        triangle.pos[2].x - triangle.pos[0].x,
+        triangle.pos[2].y - triangle.pos[0].y,
+        triangle.pos[2].z - triangle.pos[0].z
+    );
 
-    for (let i = 0; i < 3; i++) {
-        let p1 = triangle.pos[i];
-        let p2 = triangle.pos[(i + 1) % 3];
+    let normal = new Vector3D(
+        line1.y * line2.z - line1.z * line2.y,
+        line1.z * line2.x - line1.x * line2.z,
+        line1.x * line2.y - line1.y * line2.x
+    );
 
-        ctx.strokeStyle = 'rgba(68,255,0,0.5)';
-        ctx.beginPath();
-        ctx.moveTo(p1.x, p1.y);
-        ctx.lineTo(p2.x, p2.y);
-        ctx.stroke();
+    let l = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+    normal.x /= l;normal.y/=l;normal.z /= l;
+
+    if(true) {
+        triangle.pos[0] = multiplication(projectionMatrix, triangle.pos[0]);
+        triangle.pos[1] = multiplication(projectionMatrix, triangle.pos[1]);
+        triangle.pos[2] = multiplication(projectionMatrix, triangle.pos[2]);
+
+        triangle.pos[0].x = (triangle.pos[0].x + 1.0) * 0.5 * width;
+        triangle.pos[0].y = (triangle.pos[0].y + 1.0) * 0.5 * height;
+        triangle.pos[1].x = (triangle.pos[1].x + 1.0) * 0.5 * width;
+        triangle.pos[1].y = (triangle.pos[1].y + 1.0) * 0.5 * height;
+        triangle.pos[2].x = (triangle.pos[2].x + 1.0) * 0.5 * width;
+        triangle.pos[2].y = (triangle.pos[2].y + 1.0) * 0.5 * height;
+
+        for (let i = 0; i < 3; i++) {
+            let p1 = triangle.pos[i];
+            let p2 = triangle.pos[(i + 1) % 3];
+
+            ctx.strokeStyle = 'rgba(68,255,0,0.5)';
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.stroke();
+        }
     }
 }
 
 let cube = new CubeMesh;
-cube.create(new Vector3D(width/2,height/2,0), 100,100,100);
-
-
-
-//Fonction utile hors projection
-function matrixProduct(m1, m2) {
-    const h = m1.length;
-    const w = m2[0].length;
-    const matrix = Array.from({ length: h }, () => Array(w).fill(0));
-
-    for (let i = 0; i < h; i++) {
-        for (let j = 0; j < w; j++) {
-            for (let k = 0; k < m2.length; k++) {
-                matrix[i][j] += m1[i][k] * m2[k][j];
-            }
-        }
-    }
-    return matrix;
-}
+cube.create(new Vector3D(0,0,3), 1,1,2);
