@@ -43,6 +43,7 @@ class Mesh {
 class CubeMesh {
     constructor() {
         this.mesh = new Mesh();
+        this.initialMesh = new Mesh();  // Copie des positions initiales
     }
 
     create(base=new Vector3D(0,0,0), longueur=1, largeur=1, profondeur=1) {
@@ -52,7 +53,7 @@ class CubeMesh {
         longueur = x + longueur;
         largeur = y + largeur;
         profondeur = z + profondeur;
-        cube = [
+        let cubeTriangles  = [
             //Devant
             new Triangle(new Vector3D(x, y, z),new Vector3D(x, largeur, z), new Vector3D(longueur, largeur, z)),
             new Triangle(new Vector3D(x, y, z),new Vector3D(longueur, largeur, z),new Vector3D(longueur, y, z)),
@@ -77,13 +78,30 @@ class CubeMesh {
             new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, y, profondeur),new Vector3D(x, y, z)),
             new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, y, z),new Vector3D(longueur, y, z))
         ];
-        this.mesh.pos = cube;
-        this.draw();
+        this.mesh.pos = cubeTriangles;
+        this.initialMesh.pos = cubeTriangles.map(tri =>
+            new Triangle(
+                new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
+                new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
+                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
+            )
+        );
     }
 
-    draw() {
+    reset() {
+        this.mesh.pos = this.initialMesh.pos.map(tri =>
+            new Triangle(
+                new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
+                new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
+                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
+            )
+        );
+    }
+
+    draw(angleX=0, angleZ=0) {
+        this.reset();
         for (let triangle of this.mesh.pos) {
-            drawTriangle(triangle);
+            drawTriangle(triangle, angleX, angleZ);
         }
     }
 }
@@ -101,16 +119,8 @@ function multiplication(matrice, vector) {
     return new Vector3D(x, y, z);
 }
 
-
-
-function drawCube(triangles) {
-    for (let triangle of triangles) {
-        drawTriangle(triangle);
-    }
-}
-
 //Matrice de rotation
-function rotation_x(angle=0) {
+function rotation_x(angle) {
     return [
         [1, 0, 0, 0],
         [0, Math.cos(angle), -Math.sin(angle),0],
@@ -119,7 +129,7 @@ function rotation_x(angle=0) {
     ];
 }
 
-function rotation_z(angle=50) {
+function rotation_z(angle) {
     return [
         [Math.cos(angle), -Math.sin(angle), 0, 0],
         [Math.sin(angle), Math.cos(angle), 0, 0],
@@ -128,7 +138,7 @@ function rotation_z(angle=50) {
     ];
 }
 
-function drawTriangle(triangle) {
+function drawTriangle(triangle, angleX, angleZ) {
 
     let projectionMatrix = [
         [aspectRatio*fovRad,0,0,0],
@@ -137,17 +147,17 @@ function drawTriangle(triangle) {
         [0,0,(-zfar*znear)/(zfar-znear),0]
     ];
 
-    //@TODO Y'a un problème avec ma matrice de rotation
+    //@TODO Y'a un problème avec ma matrice de
 
     //Rotation sur l'axe z
-    triangle.pos[0] = multiplication(rotation_z(), triangle.pos[0]);
-    triangle.pos[1] = multiplication(rotation_z(), triangle.pos[1]);
-    triangle.pos[2] = multiplication(rotation_z(), triangle.pos[2]);
+    triangle.pos[0] = multiplication(rotation_z(angleZ), triangle.pos[0]);
+    triangle.pos[1] = multiplication(rotation_z(angleZ), triangle.pos[1]);
+    triangle.pos[2] = multiplication(rotation_z(angleZ), triangle.pos[2]);
 
     //Rotation sur l'axe x
-    triangle.pos[0] = multiplication(rotation_x(), triangle.pos[0]);
-    triangle.pos[1] = multiplication(rotation_x(), triangle.pos[1]);
-    triangle.pos[2] = multiplication(rotation_x(), triangle.pos[2]);
+    triangle.pos[0] = multiplication(rotation_x(angleX), triangle.pos[0]);
+    triangle.pos[1] = multiplication(rotation_x(angleX), triangle.pos[1]);
+    triangle.pos[2] = multiplication(rotation_x(angleX), triangle.pos[2]);
 
     let line1 = new Vector3D(
         triangle.pos[1].x - triangle.pos[0].x,
@@ -171,7 +181,7 @@ function drawTriangle(triangle) {
     normal.x /= l;normal.y/=l;normal.z /= l;
 
     //normal.z<0
-    if(true) {
+    if(normal.z<0) {
         triangle.pos[0] = multiplication(projectionMatrix, triangle.pos[0]);
         triangle.pos[1] = multiplication(projectionMatrix, triangle.pos[1]);
         triangle.pos[2] = multiplication(projectionMatrix, triangle.pos[2]);
@@ -197,4 +207,16 @@ function drawTriangle(triangle) {
 }
 
 let cube = new CubeMesh;
-cube.create(new Vector3D(0,0,3), 1,1,2);
+cube.create(new Vector3D(0,0,10), 1,1,3);
+let angle_x = 0;
+let angle_z = 0;
+cube.draw(angle_x,angle_z);
+
+function cubeDraw(){
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    cube.draw(angle_x, angle_z);
+    angle_z += 0.01;
+    angle_x+=0.01;
+}
+
+setInterval(cubeDraw, 1000/60);
