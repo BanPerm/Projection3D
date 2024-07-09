@@ -88,19 +88,20 @@ class CubeMesh {
     }
 }
 
-function multiplication(matrice, triangle){
-    let o= new Vector3D(0,0,0);
-    o.x = triangle.x * matrice[0][0] + triangle.y * matrice[1][0] + triangle.z * matrice[2][0] + matrice[3][0];
-    o.y = triangle.x * matrice[0][1] + triangle.y * matrice[1][1] + triangle.z * matrice[2][1] + matrice[3][1];
-    o.z = triangle.x * matrice[0][2] + triangle.y * matrice[1][2] + triangle.z * matrice[2][2] + matrice[3][2];
-    let w = triangle.x * matrice[0][3] + triangle.y * matrice[1][3] + triangle.z * matrice[2][3] + matrice[3][3];
+function multiplication(matrice, vector) {
+    let x = vector.x * matrice[0][0] + vector.y * matrice[1][0] + vector.z * matrice[2][0] + matrice[3][0];
+    let y = vector.x * matrice[0][1] + vector.y * matrice[1][1] + vector.z * matrice[2][1] + matrice[3][1];
+    let z = vector.x * matrice[0][2] + vector.y * matrice[1][2] + vector.z * matrice[2][2] + matrice[3][2];
+    let w = vector.x * matrice[0][3] + vector.y * matrice[1][3] + vector.z * matrice[2][3] + matrice[3][3];
 
-    if (w !==0.0){
-        o.x /= w; o.y /= w; o.z /=w;
+    if (w !== 0.0) {
+        x /= w; y /= w; z /= w;
     }
 
-    return o;
+    return new Vector3D(x, y, z);
 }
+
+
 
 function drawCube(triangles) {
     for (let triangle of triangles) {
@@ -109,11 +110,20 @@ function drawCube(triangles) {
 }
 
 //Matrice de rotation
-function rotation_x(angle=0.1) {
+function rotation_x(angle=0) {
     return [
         [1, 0, 0, 0],
-        [0, Math.cos(angle), Math.sin(angle),0],
-        [0, -Math.sin(angle), Math.cos(angle),0],
+        [0, Math.cos(angle), -Math.sin(angle),0],
+        [0, Math.sin(angle), Math.cos(angle),0],
+        [0, 0, 0, 1]
+    ];
+}
+
+function rotation_z(angle=50) {
+    return [
+        [Math.cos(angle), -Math.sin(angle), 0, 0],
+        [Math.sin(angle), Math.cos(angle), 0, 0],
+        [0, 0, 1, 0],
         [0, 0, 0, 1]
     ];
 }
@@ -128,6 +138,13 @@ function drawTriangle(triangle) {
     ];
 
     //@TODO Y'a un problème avec ma matrice de rotation
+
+    //Rotation sur l'axe z
+    triangle.pos[0] = multiplication(rotation_z(), triangle.pos[0]);
+    triangle.pos[1] = multiplication(rotation_z(), triangle.pos[1]);
+    triangle.pos[2] = multiplication(rotation_z(), triangle.pos[2]);
+
+    //Rotation sur l'axe x
     triangle.pos[0] = multiplication(rotation_x(), triangle.pos[0]);
     triangle.pos[1] = multiplication(rotation_x(), triangle.pos[1]);
     triangle.pos[2] = multiplication(rotation_x(), triangle.pos[2]);
@@ -153,6 +170,7 @@ function drawTriangle(triangle) {
     let l = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
     normal.x /= l;normal.y/=l;normal.z /= l;
 
+    //normal.z<0
     if(true) {
         triangle.pos[0] = multiplication(projectionMatrix, triangle.pos[0]);
         triangle.pos[1] = multiplication(projectionMatrix, triangle.pos[1]);
