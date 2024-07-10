@@ -30,6 +30,7 @@ class Vector3D{
 class Triangle {
     constructor(p1, p2, p3) {
         this.pos = [p1, p2, p3];
+        this.color = 'white'
     }
 }
 
@@ -123,19 +124,24 @@ function multiplication(matrice, vector) {
 function rotation_x(angle) {
     return [
         [1, 0, 0, 0],
-        [0, Math.cos(angle), -Math.sin(angle),0],
-        [0, Math.sin(angle), Math.cos(angle),0],
+        [0, Math.cos(angle), Math.sin(angle),0],
+        [0, -Math.sin(angle), Math.cos(angle),0],
         [0, 0, 0, 1]
     ];
 }
 
 function rotation_z(angle) {
     return [
-        [Math.cos(angle), -Math.sin(angle), 0, 0],
-        [Math.sin(angle), Math.cos(angle), 0, 0],
+        [Math.cos(angle), Math.sin(angle), 0, 0],
+        [-Math.sin(angle), Math.cos(angle), 0, 0],
         [0, 0, 1, 0],
         [0, 0, 0, 1]
     ];
+}
+
+function getColour(lum) {
+    let grey = Math.floor(255 * lum);
+    return `rgb(${grey}, ${grey}, ${grey})`;
 }
 
 function drawTriangle(triangle, angleX, angleZ) {
@@ -146,8 +152,6 @@ function drawTriangle(triangle, angleX, angleZ) {
         [0,0,zfar/(zfar-znear),1],
         [0,0,(-zfar*znear)/(zfar-znear),0]
     ];
-
-    //@TODO Y'a un problème avec ma matrice de rotation
 
     //Rotation sur l'axe z
     triangle.pos[0] = multiplication(rotation_z(angleZ), triangle.pos[0]);
@@ -184,7 +188,21 @@ function drawTriangle(triangle, angleX, angleZ) {
     let l = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
     normal.x /= l;normal.y/=l;normal.z /= l;
 
-    if(normal.z<0) {
+    //Product Dot pour vérifier si le triangle est bien visible
+    if(normal.x* (triangle.pos[0].x - camera.x)+
+    normal.y* (triangle.pos[0].y - camera.y)+
+    normal.z* (triangle.pos[0].z - camera.z) <0)
+    {
+        //Ajout d'un système de light
+        let light_direction = new Vector3D(0,0,-1);
+        let l = Math.sqrt(light_direction.x*light_direction.x+ light_direction.y * light_direction.y + light_direction.z*light_direction.z);
+        light_direction.x /= l;normal.x /= l;normal.z /= l;
+
+        let dotProduct = normal.x*light_direction.x + light_direction.y * normal.y + normal.z * light_direction.z;
+
+        triangle.color = getColour(dotProduct);
+
+
         triangle.pos[0] = multiplication(projectionMatrix, triangle.pos[0]);
         triangle.pos[1] = multiplication(projectionMatrix, triangle.pos[1]);
         triangle.pos[2] = multiplication(projectionMatrix, triangle.pos[2]);
@@ -200,17 +218,23 @@ function drawTriangle(triangle, angleX, angleZ) {
             let p1 = triangle.pos[i];
             let p2 = triangle.pos[(i + 1) % 3];
 
-            ctx.strokeStyle = 'rgba(68,255,0,0.5)';
+            ctx.fillStyle = triangle.color;
+            ctx.strokeStyle = triangle.color;
             ctx.beginPath();
-            ctx.moveTo(p1.x, p1.y);
-            ctx.lineTo(p2.x, p2.y);
+            ctx.moveTo(triangle.pos[0].x, triangle.pos[0].y);
+            ctx.lineTo(triangle.pos[1].x, triangle.pos[1].y);
+            ctx.lineTo(triangle.pos[2].x, triangle.pos[2].y);
+            ctx.closePath();
             ctx.stroke();
+            ctx.fill();
+
         }
     }
 }
 
 let angle_x = 0;
 let angle_z = 0;
+let camera = new Vector3D(0,0,0);
 let cube = new CubeMesh;
 cube.create(new Vector3D(0,0,0), 1,1,1);
 cube.draw(angle_x,angle_z);
@@ -218,7 +242,7 @@ cube.draw(angle_x,angle_z);
 function cubeDraw(){
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     cube.draw(angle_x, angle_z);
-    angle_z += 0.01;
+    angle_z += 0.02;
     angle_x+=0.01;
 }
 
