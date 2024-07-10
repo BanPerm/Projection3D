@@ -1,3 +1,8 @@
+//!!!!!!!! Commande à lancer avant de lancer le site !!!!!!!!!!\\
+// python -m http.server 8000
+
+
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -39,7 +44,42 @@ class Mesh {
     constructor() {
         this.pos = [];
     }
+
+    async loadFromObjectFile(filePath) {
+        try {
+            const response = await fetch(filePath);
+            if (!response.ok) {
+                throw new Error('Failed to fetch file');
+            }
+            const text = await response.text();
+            const lines = text.split('\n');
+            const verts = [];
+            const tris = [];
+
+            lines.forEach(line => {
+                const tokens = line.trim().split(/\s+/);
+                if (tokens[0] === 'v') {
+                    const x = parseFloat(tokens[1]);
+                    const y = parseFloat(tokens[2]);
+                    const z = parseFloat(tokens[3]);
+                    verts.push(new Vector3D(x, y, z));
+                } else if (tokens[0] === 'f') {
+                    const f1 = parseInt(tokens[1]) - 1;
+                    const f2 = parseInt(tokens[2]) - 1;
+                    const f3 = parseInt(tokens[3]) - 1;
+                    tris.push(new Triangle(verts[f1], verts[f2], verts[f3]));
+                }
+            });
+
+            this.pos = tris;
+            return this.pos;
+        } catch (error) {
+            console.error('Failed to fetch or parse file:', error);
+            throw error;
+        }
+    }
 }
+
 
 class CubeMesh {
     constructor() {
@@ -47,46 +87,23 @@ class CubeMesh {
         this.initialMesh = new Mesh();  // Copie des positions initiales
     }
 
-    create(base=new Vector3D(0,0,0), longueur=1, largeur=1, profondeur=1) {
-        let x = base.x;
-        let y = base.y;
-        let z = base.z;
-        longueur = x + longueur;
-        largeur = y + largeur;
-        profondeur = z + profondeur;
-        let cubeTriangles  = [
-            //Devant
-            new Triangle(new Vector3D(x, y, z),new Vector3D(x, largeur, z), new Vector3D(longueur, largeur, z)),
-            new Triangle(new Vector3D(x, y, z),new Vector3D(longueur, largeur, z),new Vector3D(longueur, y, z)),
+    async create() {
+        try {
+            await this.mesh.loadFromObjectFile("object/VideoShip.obj");
 
-            // Derrière
-            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(longueur, largeur, profondeur),new Vector3D(x, largeur, profondeur)),
-            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, largeur, profondeur),new Vector3D(x, y, profondeur)),
+            this.initialMesh.pos = this.mesh.pos.map(tri =>
+                    new Triangle(
+                        new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
+                        new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
+                        new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
+                    )
+                );
 
-            // Gauche
-            new Triangle(new Vector3D(longueur, y, z),new Vector3D(longueur, largeur, z),new Vector3D(longueur, largeur, profondeur)),
-            new Triangle(new Vector3D(longueur, y, z),new Vector3D(longueur, largeur, profondeur),new Vector3D(longueur, y, profondeur)),
-
-            // Droite
-            new Triangle(new Vector3D(x, y, profondeur),new Vector3D(x, largeur, profondeur),new Vector3D(x, largeur, z)),
-            new Triangle(new Vector3D(x, y, profondeur),new Vector3D(x, largeur, z),new Vector3D(x, y, z) ),
-
-            // Haut
-            new Triangle(new Vector3D(x, largeur, z),new Vector3D(x, largeur, profondeur),new Vector3D(longueur, largeur, profondeur)),
-            new Triangle(new Vector3D(x, largeur, z),new Vector3D(longueur, largeur, profondeur),new Vector3D(longueur, largeur, z)),
-
-            // Bas
-            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, y, profondeur),new Vector3D(x, y, z)),
-            new Triangle(new Vector3D(longueur, y, profondeur),new Vector3D(x, y, z),new Vector3D(longueur, y, z))
-        ];
-        this.mesh.pos = cubeTriangles;
-        this.initialMesh.pos = cubeTriangles.map(tri =>
-            new Triangle(
-                new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
-                new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
-            )
-        );
+            console.log(this.mesh.pos);
+        }
+        catch (error) {
+            console.error('Failed to create mesh:', error);
+        }
     }
 
     reset() {
@@ -99,13 +116,14 @@ class CubeMesh {
         );
     }
 
-    draw(angleX=0, angleZ=0) {
+    draw(angleX = 0, angleZ = 0) {
         this.reset();
         for (let triangle of this.mesh.pos) {
             drawTriangle(triangle, angleX, angleZ);
         }
     }
 }
+
 
 function multiplication(matrice, vector) {
     let x = vector.x * matrice[0][0] + vector.y * matrice[1][0] + vector.z * matrice[2][0] + matrice[3][0];
@@ -163,9 +181,9 @@ function drawTriangle(triangle, angleX, angleZ) {
     triangle.pos[1] = multiplication(rotation_x(angleX), triangle.pos[1]);
     triangle.pos[2] = multiplication(rotation_x(angleX), triangle.pos[2]);
 
-    triangle.pos[0].z += 5
-    triangle.pos[1].z += 5
-    triangle.pos[2].z += 5
+    triangle.pos[0].z += 10
+    triangle.pos[1].z += 10
+    triangle.pos[2].z += 10
 
     let line1 = new Vector3D(
         triangle.pos[1].x - triangle.pos[0].x,
@@ -236,7 +254,7 @@ let angle_x = 0;
 let angle_z = 0;
 let camera = new Vector3D(0,0,0);
 let cube = new CubeMesh;
-cube.create(new Vector3D(0,0,0), 1,1,1);
+cube.create();
 cube.draw(angle_x,angle_z);
 
 function cubeDraw(){
