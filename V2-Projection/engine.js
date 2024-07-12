@@ -2,7 +2,6 @@
 // python -m http.server 8000
 
 
-
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -19,8 +18,10 @@ const fov = 90;
 const aspectRatio = height / width;
 const fovRad = 1 / Math.tan((fov * 0.5) / 180 * Math.PI);
 
-// Définition de mes classes de base
+//Variable globale
+let triangleToShow = [];
 
+// Définition de mes classes de base
 class Vector3D {
     constructor(x, y, z) {
         this.x = x;
@@ -84,8 +85,8 @@ class CubeMesh {
 
     async create() {
         try {
-            //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-            await this.mesh.loadFromObjectFile("object/voiture.obj");
+            await this.mesh.loadFromObjectFile("object/VideoShip.obj");
+            //await this.mesh.loadFromObjectFile("object/character.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -117,7 +118,7 @@ class CubeMesh {
         const rotationMatrixZ = rotation_z(angleZ);
 
         for (let triangle of this.mesh.pos) {
-            drawTriangle(triangle, rotationMatrixX, rotationMatrixZ);
+            projectAndStoreTriangle(triangle, rotationMatrixX, rotationMatrixZ);
         }
     }
 }
@@ -161,7 +162,7 @@ function getColour(lum) {
     return `rgb(${grey}, ${grey}, ${grey})`;
 }
 
-function drawTriangle(triangle, rotationMatrixX, rotationMatrixZ) {
+function projectAndStoreTriangle(triangle, rotationMatrixX, rotationMatrixZ) {
     const projectionMatrix = [
         [aspectRatio * fovRad, 0, 0, 0],
         [0, fovRad, 0, 0],
@@ -179,9 +180,9 @@ function drawTriangle(triangle, rotationMatrixX, rotationMatrixZ) {
     triangle.pos[1] = multiplication(rotationMatrixX, triangle.pos[1]);
     triangle.pos[2] = multiplication(rotationMatrixX, triangle.pos[2]);
 
-    triangle.pos[0].z += 50;
-    triangle.pos[1].z += 50;
-    triangle.pos[2].z += 50;
+    triangle.pos[0].z += 10;
+    triangle.pos[1].z += 10;
+    triangle.pos[2].z += 10;
 
     let line1 = new Vector3D(
         triangle.pos[1].x - triangle.pos[0].x,
@@ -220,8 +221,6 @@ function drawTriangle(triangle, rotationMatrixX, rotationMatrixZ) {
 
         let dp = normal.x * light_direction.x + normal.y * light_direction.y + normal.z * light_direction.z;
 
-        triangle.color = getColour(dp);
-
         // Projection 3D -> 2D
         let projected_triangle = new Triangle(
             multiplication(projectionMatrix, triangle.pos[0]),
@@ -229,64 +228,84 @@ function drawTriangle(triangle, rotationMatrixX, rotationMatrixZ) {
             multiplication(projectionMatrix, triangle.pos[2])
         );
 
+        projected_triangle.color = getColour(dp);
+
+        // Scale into view
         projected_triangle.pos[0].x += 1.0; projected_triangle.pos[0].y += 1.0;
         projected_triangle.pos[1].x += 1.0; projected_triangle.pos[1].y += 1.0;
         projected_triangle.pos[2].x += 1.0; projected_triangle.pos[2].y += 1.0;
 
-        projected_triangle.pos[0].x *= 0.5 * canvas.width;
-        projected_triangle.pos[0].y *= 0.5 * canvas.height;
-        projected_triangle.pos[1].x *= 0.5 * canvas.width;
-        projected_triangle.pos[1].y *= 0.5 * canvas.height;
-        projected_triangle.pos[2].x *= 0.5 * canvas.width;
-        projected_triangle.pos[2].y *= 0.5 * canvas.height;
+        projected_triangle.pos[0].x *= 0.5 * width;
+        projected_triangle.pos[0].y *= 0.5 * height;
+        projected_triangle.pos[1].x *= 0.5 * width;
+        projected_triangle.pos[1].y *= 0.5 * height;
+        projected_triangle.pos[2].x *= 0.5 * width;
+        projected_triangle.pos[2].y *= 0.5 * height;
 
-        // Dessiner le triangle
+        triangleToShow.push(projected_triangle);
+    }
+}
+
+function sortTriangles() {
+    triangleToShow.sort((t1, t2) => {
+        const z1 = (t1.pos[0].z + t1.pos[1].z + t1.pos[2].z) / 3.0;
+        const z2 = (t2.pos[0].z + t2.pos[1].z + t2.pos[2].z) / 3.0;
+        return z2 - z1;
+    });
+}
+
+function drawTriangles() {
+    for(let projected_triangle of triangleToShow) {
         ctx.beginPath();
         ctx.moveTo(projected_triangle.pos[0].x, projected_triangle.pos[0].y);
         ctx.lineTo(projected_triangle.pos[1].x, projected_triangle.pos[1].y);
         ctx.lineTo(projected_triangle.pos[2].x, projected_triangle.pos[2].y);
         ctx.closePath();
 
-        ctx.fillStyle = triangle.color;
+        ctx.fillStyle = projected_triangle.color;
+        ctx.strokeStyle = projected_triangle.color;
         ctx.fill();
         ctx.stroke();
     }
 }
 
-let angleX = 0;
-let angleZ = 0;
-
 const camera = { x: 0, y: 0, z: 0 };
+// FPS variables
+let frameCount = 0;
+let lastTime = performance.now();
+let fps = 0;
+
+function animate() {
+    ctx.clearRect(0, 0, width, height);
+    triangleToShow = [];
+
+    const angleX = performance.now() / 1000;
+    const angleZ = performance.now() / 1000;
+
+    mesh.draw(angleX, angleZ);
+
+    sortTriangles();
+    drawTriangles();
+
+    // Calcul des FPS
+    const currentTime = performance.now();
+    frameCount++;
+    if (currentTime > lastTime + 1000) {
+        fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+        frameCount = 0;
+        lastTime = currentTime;
+    }
+
+    // Affichage des FPS en haut à droite du canvas
+    ctx.fillStyle = 'white';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(`FPS: ${fps}`, canvas.width - 10, 20);
+
+    requestAnimationFrame(animate);
+}
 
 const mesh = new CubeMesh();
 mesh.create().then(() => {
-    // FPS variables
-    let frameCount = 0;
-    let lastTime = performance.now();
-    let fps = 0;
-
-    function animate() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        mesh.draw(angleX, angleZ);
-        angleX += 0.01;
-        angleZ += 0.01;
-
-        // Calcul des FPS
-        const currentTime = performance.now();
-        frameCount++;
-        if (currentTime > lastTime + 1000) {
-            fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
-            frameCount = 0;
-            lastTime = currentTime;
-        }
-
-        // Affichage des FPS en haut à droite du canvas
-        ctx.fillStyle = 'white';
-        ctx.font = '16px Arial';
-        ctx.textAlign = 'right';
-        ctx.fillText(`FPS: ${fps}`, canvas.width - 10, 20);
-
-        requestAnimationFrame(animate);
-    }
     animate();
 });
