@@ -1,6 +1,7 @@
 //!!!!!!!! Commande à lancer avant de lancer le site !!!!!!!!!!\\
 // python -m http.server 8000
 
+let gpu = new window.GPU.GPU();
 
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -23,10 +24,107 @@ let triangleToShow = [];
 
 // Définition de mes classes de base
 class Vector3D {
-    constructor(x, y, z) {
+    constructor(x=0, y=0, z=0,w=1) {
         this.x = x;
         this.y = y;
         this.z = z;
+        this.w = w;
+    }
+
+    toArray() {
+        return [this.x, this.y, this.z];
+    }
+
+    lengthVector(){
+        return Math.sqrt(Vector3D.dotProductVector(this,this));
+    }
+
+    normalise(){
+        let l = this.lengthVector();
+        this.x = this.x / l;
+        this.y = this.y / l;
+        this.z = this.z / l;
+    }
+
+    static fromArray(array) {
+        return new Vector3D(array[0], array[1], array[2]);
+    }
+
+    static addVector3D(vector, vector2) {
+        return new Vector3D(vector2.x + vector.x, vector2.y + vector.y, vector2.z + vector.z);
+    }
+
+    static substractVector(v1, v2) {
+        return new Vector3D( v1.x - v2.x, v1.y - v2.y, v1.z - v2.z );
+    }
+
+    static divideVector(v1, divider) {
+        console.log("Divider: "+divider);
+        return new Vector3D( v1.x/divider, v1.y/divider, v1.z/divider);
+    }
+
+    static multiplyVector(v1, m) {
+        return new Vector3D( v1.x*m, v1.y*m, v1.z*m);
+    }
+
+    static dotProductVector(v1, v2) {
+        return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+    }
+
+    static crossProduct(v1, v2) {
+        let v = new Vector3D();
+        v.x = v1.y * v2.z - v1.z * v2.y;
+        v.y = v1.z * v2.x - v1.x * v2.z;
+        v.z = v1.x * v2.y - v1.y * v2.x;
+        return v;
+    }
+
+
+}
+
+//Sert juste pour simplifier les opération sur les différentes matrices dans le code
+class Matrice{
+    constructor(){}
+
+    static matriceMultiplyVector(matrice, vector) {
+        let v = new Vector3D();
+        v.x = vector.x * matrice[0][0] + vector.y * matrice[1][0] + vector.z * matrice[2][0] + vector.w * matrice[3][0];
+        v.y = vector.x * matrice[0][1] + vector.y * matrice[1][1] + vector.z * matrice[2][1] + vector.w * matrice[3][1];
+        v.z = vector.x * matrice[0][2] + vector.y * matrice[1][2] + vector.z * matrice[2][2] + vector.w * matrice[3][2];
+        v.w = vector.x * matrice[0][3] + vector.y * matrice[1][3] + vector.z * matrice[2][3] + vector.w * matrice[3][3];
+        return v;
+    }
+
+    static matriceMakeIdentity()
+    {
+        return [[1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1]];
+    }
+
+    static matriceMakeTranslation(x,y,z) {
+        return [[1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 1, 0],
+            [x, y, z, 1]];
+    }
+
+    static matriceMakeProjection(fovRad, aspectRatio, znear, zfar) {
+        return [[aspectRatio * fovRad, 0, 0, 0],
+            [0, fovRad, 0, 0],
+            [0, 0, zfar / (zfar - znear), 1],
+            [0, 0, (-zfar * znear) / (zfar - znear), 0]];
+    }
+
+    static matriceMultiplyMatrix(m1, m2) {
+        let matrice = Array.from({ length: 4 }, () => Array(4).fill(0));
+        for (let c = 0; c < 4; c++) {
+            for (let r = 0; r < 4; r++) {
+                matrice[r][c] = m1[r][0] * m2[0][c] + m1[r][1] * m2[1][c] + m1[r][2] * m2[2][c] + m1[r][3] * m2[3][c];
+            }
+        }
+        return matrice;
     }
 }
 
@@ -86,7 +184,7 @@ class CubeMesh {
     async create() {
         try {
             await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-            //await this.mesh.loadFromObjectFile("object/character.obj");
+            //await this.mesh.loadFromObjectFile("object/voiture.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -111,31 +209,12 @@ class CubeMesh {
         );
     }
 
-    draw(angleX = 0, angleZ = 0) {
+    draw(angleX = 0, angleY=0, angleZ = 0) {
         this.reset();
-        // Pré-calculer les matrices de rotation
-        const rotationMatrixX = rotation_x(angleX);
-        const rotationMatrixZ = rotation_z(angleZ);
 
-        for (let triangle of this.mesh.pos) {
-            projectAndStoreTriangle(triangle, rotationMatrixX, rotationMatrixZ);
-        }
+        projectAndStoreTriangle(this.mesh.pos, angleX, angleY, angleZ);
+
     }
-}
-
-function multiplication(matrice, vector) {
-    let x = vector.x * matrice[0][0] + vector.y * matrice[1][0] + vector.z * matrice[2][0] + matrice[3][0];
-    let y = vector.x * matrice[0][1] + vector.y * matrice[1][1] + vector.z * matrice[2][1] + matrice[3][1];
-    let z = vector.x * matrice[0][2] + vector.y * matrice[1][2] + vector.z * matrice[2][2] + matrice[3][2];
-    let w = vector.x * matrice[0][3] + vector.y * matrice[1][3] + vector.z * matrice[2][3] + matrice[3][3];
-
-    if (w !== 0.0) {
-        x /= w;
-        y /= w;
-        z /= w;
-    }
-
-    return new Vector3D(x, y, z);
 }
 
 // Matrice de rotation
@@ -144,6 +223,15 @@ function rotation_x(angle) {
         [1, 0, 0, 0],
         [0, Math.cos(angle), Math.sin(angle), 0],
         [0, -Math.sin(angle), Math.cos(angle), 0],
+        [0, 0, 0, 1]
+    ];
+}
+
+function rotation_y(angle){
+    return [
+        [Math.cos(angle), 0, Math.sin(angle), 0],
+        [0, 1, 0, 0],
+        [-Math.sin(angle), 0, Math.cos(angle), 0],
         [0, 0, 0, 1]
     ];
 }
@@ -162,87 +250,99 @@ function getColour(lum) {
     return `rgb(${grey}, ${grey}, ${grey})`;
 }
 
-function projectAndStoreTriangle(triangle, rotationMatrixX, rotationMatrixZ) {
-    const projectionMatrix = [
-        [aspectRatio * fovRad, 0, 0, 0],
-        [0, fovRad, 0, 0],
-        [0, 0, zfar / (zfar - znear), 1],
-        [0, 0, (-zfar * znear) / (zfar - znear), 0]
-    ];
+function multiplication(matrice, vector) {
+    let x = vector.x * matrice[0][0] + vector.y * matrice[1][0] + vector.z * matrice[2][0] + matrice[3][0];
+    let y = vector.x * matrice[0][1] + vector.y * matrice[1][1] + vector.z * matrice[2][1] + matrice[3][1];
+    let z = vector.x * matrice[0][2] + vector.y * matrice[1][2] + vector.z * matrice[2][2] + matrice[3][2];
+    let w = vector.x * matrice[0][3] + vector.y * matrice[1][3] + vector.z * matrice[2][3] + matrice[3][3];
 
-    // Rotation sur l'axe z
-    triangle.pos[0] = multiplication(rotationMatrixZ, triangle.pos[0]);
-    triangle.pos[1] = multiplication(rotationMatrixZ, triangle.pos[1]);
-    triangle.pos[2] = multiplication(rotationMatrixZ, triangle.pos[2]);
+    if (w !== 0.0) {
+        x /= w;
+        y /= w;
+        z /= w;
+    }
 
-    // Rotation sur l'axe x
-    triangle.pos[0] = multiplication(rotationMatrixX, triangle.pos[0]);
-    triangle.pos[1] = multiplication(rotationMatrixX, triangle.pos[1]);
-    triangle.pos[2] = multiplication(rotationMatrixX, triangle.pos[2]);
+    return new Vector3D(x, y, z);
+}
 
-    triangle.pos[0].z += 10;
-    triangle.pos[1].z += 10;
-    triangle.pos[2].z += 10;
+function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
-    let line1 = new Vector3D(
-        triangle.pos[1].x - triangle.pos[0].x,
-        triangle.pos[1].y - triangle.pos[0].y,
-        triangle.pos[1].z - triangle.pos[0].z
-    );
+    // Pré-calculer les matrices de rotation
+    const rotationMatrixX = rotation_x(angleX);
+    const rotationMatrixY = rotation_y(angleY);
+    const rotationMatrixZ = rotation_z(angleZ);
+    const projectionMatrix = Matrice.matriceMakeProjection(fovRad, aspectRatio, znear, zfar);
 
-    let line2 = new Vector3D(
-        triangle.pos[2].x - triangle.pos[0].x,
-        triangle.pos[2].y - triangle.pos[0].y,
-        triangle.pos[2].z - triangle.pos[0].z
-    );
 
-    let normal = new Vector3D(
-        line1.y * line2.z - line1.z * line2.y,
-        line1.z * line2.x - line1.x * line2.z,
-        line1.x * line2.y - line1.y * line2.x
-    );
+    const matTrans = Matrice.matriceMakeTranslation(0,0,30);
 
-    let l = Math.sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
-    normal.x /= l;
-    normal.y /= l;
-    normal.z /= l;
+    let matWorld;
+    matWorld = Matrice.matriceMultiplyMatrix(rotationMatrixZ, rotationMatrixX);
+    matWorld = Matrice.matriceMultiplyMatrix(matWorld, matTrans);
 
-    // Product Dot pour vérifier si le triangle est bien visible
-    if (normal.x * (triangle.pos[0].x - camera.x) +
-        normal.y * (triangle.pos[0].y - camera.y) +
-        normal.z * (triangle.pos[0].z - camera.z) < 0) {
+    for (let triangle of triangles) {
+        // Rotation
+        triangle.pos[0] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[0]);
+        triangle.pos[1] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[1]);
+        triangle.pos[2] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[2]);
 
-        // Ajout d'un système de light
-        let light_direction = new Vector3D(0, 0, -1);
-        let l = Math.sqrt(light_direction.x * light_direction.x + light_direction.y * light_direction.y + light_direction.z * light_direction.z);
-        light_direction.x /= l;
-        light_direction.y /= l;
-        light_direction.z /= l;
 
-        let dp = normal.x * light_direction.x + normal.y * light_direction.y + normal.z * light_direction.z;
+        let line1 = Vector3D.substractVector(triangle.pos[1], triangle.pos[0]);
+        let line2 = Vector3D.substractVector(triangle.pos[2], triangle.pos[0]);
 
-        // Projection 3D -> 2D
-        let projected_triangle = new Triangle(
-            multiplication(projectionMatrix, triangle.pos[0]),
-            multiplication(projectionMatrix, triangle.pos[1]),
-            multiplication(projectionMatrix, triangle.pos[2])
-        );
+        let normal = Vector3D.crossProduct(line1,line2);
 
-        projected_triangle.color = getColour(dp);
+        normal.normalise()
 
-        // Scale into view
-        projected_triangle.pos[0].x += 1.0; projected_triangle.pos[0].y += 1.0;
-        projected_triangle.pos[1].x += 1.0; projected_triangle.pos[1].y += 1.0;
-        projected_triangle.pos[2].x += 1.0; projected_triangle.pos[2].y += 1.0;
+        let vCameraRay = Vector3D.substractVector(triangle.pos[0], camera);
 
-        projected_triangle.pos[0].x *= 0.5 * width;
-        projected_triangle.pos[0].y *= 0.5 * height;
-        projected_triangle.pos[1].x *= 0.5 * width;
-        projected_triangle.pos[1].y *= 0.5 * height;
-        projected_triangle.pos[2].x *= 0.5 * width;
-        projected_triangle.pos[2].y *= 0.5 * height;
+        // Product Dot pour vérifier si le triangle est bien visible
+        if (Vector3D.dotProductVector(normal, vCameraRay) < 0) {
 
-        triangleToShow.push(projected_triangle);
+            // Ajout d'un système de light
+            let light_direction = new Vector3D(0, 0, -1);
+            light_direction.normalise();
+
+            let dp = Math.max(0.1,Vector3D.dotProductVector(light_direction, normal));
+
+            // Projection 3D -> 2D
+            let projected_triangle = new Triangle(
+                Matrice.matriceMultiplyVector(projectionMatrix, triangle.pos[0]),
+                Matrice.matriceMultiplyVector(projectionMatrix, triangle.pos[1]),
+                Matrice.matriceMultiplyVector(projectionMatrix, triangle.pos[2])
+            );
+
+
+            console.log("Pos 0 avant:" + triangle.pos[0].x);
+
+            triangle.pos[0] = Vector3D.divideVector(triangle.pos[0], triangle.pos[0].w);
+            triangle.pos[1] = Vector3D.divideVector(triangle.pos[1], triangle.pos[1].w);
+            triangle.pos[2] = Vector3D.divideVector(triangle.pos[2], triangle.pos[2].w);
+
+            console.log("Pos 0 apres:" + triangle.pos[0].x);
+
+            projected_triangle.color = getColour(dp);
+
+            let offset = new Vector3D(1,1,0);
+
+            triangle.pos[0] = Vector3D.addVector3D(triangle.pos[0], offset);
+            triangle.pos[1] = Vector3D.addVector3D(triangle.pos[1], offset);
+            triangle.pos[2] = Vector3D.addVector3D(triangle.pos[2], offset);
+
+            // Scale into view
+            projected_triangle.pos[0].x += 1.0; projected_triangle.pos[0].y += 1.0;
+            projected_triangle.pos[1].x += 1.0; projected_triangle.pos[1].y += 1.0;
+            projected_triangle.pos[2].x += 1.0; projected_triangle.pos[2].y += 1.0;
+
+            projected_triangle.pos[0].x *= 0.5 * width;
+            projected_triangle.pos[0].y *= 0.5 * height;
+            projected_triangle.pos[1].x *= 0.5 * width;
+            projected_triangle.pos[1].y *= 0.5 * height;
+            projected_triangle.pos[2].x *= 0.5 * width;
+            projected_triangle.pos[2].y *= 0.5 * height;
+
+            triangleToShow.push(projected_triangle);
+        }
     }
 }
 
@@ -269,7 +369,7 @@ function drawTriangles() {
     }
 }
 
-const camera = { x: 0, y: 0, z: 0 };
+const camera = new Vector3D();
 // FPS variables
 let frameCount = 0;
 let lastTime = performance.now();
@@ -282,7 +382,7 @@ function animate() {
     const angleX = performance.now() / 1000;
     const angleZ = performance.now() / 1000;
 
-    mesh.draw(angleX, angleZ);
+    mesh.draw(angleX,0, angleZ);
 
     sortTriangles();
     drawTriangles();
@@ -309,3 +409,26 @@ const mesh = new CubeMesh();
 mesh.create().then(() => {
     animate();
 });
+
+//!!!!!!!! Marche pas (voir à implémenter plus tard) !!!!!!!!\\
+
+// const multiplyMatrixVector = gpu.createKernel(function(matrice, vector) {
+//     const x = vector[0] * matrice[0][0] + vector[1] * matrice[1][0] + vector[2] * matrice[2][0] + matrice[3][0];
+//     const y = vector[0] * matrice[0][1] + vector[1] * matrice[1][1] + vector[2] * matrice[2][1] + matrice[3][1];
+//     const z = vector[0] * matrice[0][2] + vector[1] * matrice[1][2] + vector[2] * matrice[2][2] + matrice[3][2];
+//     const w = vector[0] * matrice[0][3] + vector[1] * matrice[1][3] + vector[2] * matrice[2][3] + matrice[3][3];
+//
+//     if (w !== 0.0) {
+//         return [x / w, y / w, z / w];
+//     } else {
+//         return [x, y, z];
+//     }
+// }, {
+//     dynamicArguments: true
+// }).setOutput([3]);
+//
+// function multiplication(matrice, vector) {
+//     const result = multiplyMatrixVector(matrice, vector.toArray());
+//     return Vector3D.fromArray(result);
+// }
+
