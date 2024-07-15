@@ -59,7 +59,6 @@ class Vector3D {
     }
 
     static divideVector(v1, divider) {
-        console.log("Divider: "+divider);
         return new Vector3D( v1.x/divider, v1.y/divider, v1.z/divider);
     }
 
@@ -183,8 +182,8 @@ class CubeMesh {
 
     async create() {
         try {
-            await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-            //await this.mesh.loadFromObjectFile("object/voiture.obj");
+            //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
+            await this.mesh.loadFromObjectFile("object/axis.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -274,7 +273,7 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
     const projectionMatrix = Matrice.matriceMakeProjection(fovRad, aspectRatio, znear, zfar);
 
 
-    const matTrans = Matrice.matriceMakeTranslation(0,0,30);
+    const matTrans = Matrice.matriceMakeTranslation(0,0,10);
 
     let matWorld;
     matWorld = Matrice.matriceMultiplyMatrix(rotationMatrixZ, rotationMatrixX);
@@ -285,7 +284,6 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
         triangle.pos[0] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[0]);
         triangle.pos[1] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[1]);
         triangle.pos[2] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[2]);
-
 
         let line1 = Vector3D.substractVector(triangle.pos[1], triangle.pos[0]);
         let line2 = Vector3D.substractVector(triangle.pos[2], triangle.pos[0]);
@@ -312,22 +310,17 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                 Matrice.matriceMultiplyVector(projectionMatrix, triangle.pos[2])
             );
 
-
-            console.log("Pos 0 avant:" + triangle.pos[0].x);
-
-            triangle.pos[0] = Vector3D.divideVector(triangle.pos[0], triangle.pos[0].w);
-            triangle.pos[1] = Vector3D.divideVector(triangle.pos[1], triangle.pos[1].w);
-            triangle.pos[2] = Vector3D.divideVector(triangle.pos[2], triangle.pos[2].w);
-
-            console.log("Pos 0 apres:" + triangle.pos[0].x);
+            projected_triangle.pos[0] = Vector3D.divideVector(projected_triangle.pos[0], projected_triangle.pos[0].w);
+            projected_triangle.pos[1] = Vector3D.divideVector(projected_triangle.pos[1], projected_triangle.pos[1].w);
+            projected_triangle.pos[2] = Vector3D.divideVector(projected_triangle.pos[2], projected_triangle.pos[2].w);
 
             projected_triangle.color = getColour(dp);
 
-            let offset = new Vector3D(1,1,0);
+            let offset = new Vector3D(0,0,0);
 
-            triangle.pos[0] = Vector3D.addVector3D(triangle.pos[0], offset);
-            triangle.pos[1] = Vector3D.addVector3D(triangle.pos[1], offset);
-            triangle.pos[2] = Vector3D.addVector3D(triangle.pos[2], offset);
+            projected_triangle.pos[0] = Vector3D.addVector3D(projected_triangle.pos[0], offset);
+            projected_triangle.pos[1] = Vector3D.addVector3D(projected_triangle.pos[1], offset);
+            projected_triangle.pos[2] = Vector3D.addVector3D(projected_triangle.pos[2], offset);
 
             // Scale into view
             projected_triangle.pos[0].x += 1.0; projected_triangle.pos[0].y += 1.0;
@@ -380,6 +373,7 @@ function animate() {
     triangleToShow = [];
 
     const angleX = performance.now() / 1000;
+    const angleY = performance.now() / 1000;
     const angleZ = performance.now() / 1000;
 
     mesh.draw(angleX,0, angleZ);
