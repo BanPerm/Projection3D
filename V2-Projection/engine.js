@@ -498,6 +498,30 @@ let fps = 0;
 let speed = 8.0;
 let keys = {};
 
+let sensitivity = 0.01;
+let isPointerLocked = false;
+
+function handleMouseMove(event) {
+    if (isPointerLocked) {
+        const deltaX = event.movementX || event.mozMovementX || 0;
+
+        yaw += deltaX * sensitivity;
+    }
+}
+
+canvas.addEventListener('click', () => {
+    canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
+    canvas.requestPointerLock();
+});
+
+// Écouter les événements de changement d'état du verrouillage du curseur
+document.addEventListener('pointerlockchange', () => {
+    isPointerLocked = (document.pointerLockElement === canvas || document.mozPointerLockElement === canvas);
+});
+
+// Écouter les mouvements de la souris lorsque le curseur est verrouillé
+document.addEventListener('mousemove', handleMouseMove);
+
 window.addEventListener('keydown', function(e) {
     keys[e.key] = true;
 });
