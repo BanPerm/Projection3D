@@ -101,10 +101,6 @@ class Vector3D {
         let d1 = dist(in_tri.pos[1], plane_n, plane_p);
         let d2 = dist(in_tri.pos[2], plane_n, plane_p);
 
-        console.log("d0: ", d0);
-        console.log("d1: ", d1);
-        console.log("d2: ", d2);
-
         if (d0 >= 0) { inside_points.push(in_tri.pos[0]); } else { outside_points.push(in_tri.pos[0]); }
         if (d1 >= 0) { inside_points.push(in_tri.pos[1]); } else { outside_points.push(in_tri.pos[1]); }
         if (d2 >= 0) { inside_points.push(in_tri.pos[2]); } else { outside_points.push(in_tri.pos[2]); }
@@ -114,6 +110,7 @@ class Vector3D {
         }
 
         if (inside_points.length === 3) {
+            out_tri1.pos = [...in_tri.pos];
             return 1;
         }
 
@@ -146,6 +143,7 @@ class Vector3D {
 
             return 2; // Return two newly formed triangles which form a quad
         }
+
     }
 
 }
@@ -325,7 +323,7 @@ function rotation_x(angle) {
 
 // Fonction pour calculer la distance signée la plus courte du point au plan
 function dist(p, plane_n, plane_p) {
-    p.normalise();
+    //p.normalise();
     return (plane_n.x * p.x + plane_n.y * p.y + plane_n.z * p.z - Vector3D.dotProductVector(plane_n, plane_p));
 }
 
@@ -537,11 +535,11 @@ function updateCamera(fElapsedTime) {
     //Mouvement de rotation
 
     if (keys['ArrowLeft']) {
-        yaw += 2 * fElapsedTime;
+        yaw -= 2 * fElapsedTime;
     }
 
     if (keys['ArrowRight']) {
-        yaw -= 2 * fElapsedTime;
+        yaw += 2 * fElapsedTime;
     }
 
 
@@ -603,6 +601,7 @@ mesh.create().then(() => {
 //     }
 // }, {
 //     dynamicArguments: true
+
 // }).setOutput([3]);
 //
 // function multiplication(matrice, vector) {
