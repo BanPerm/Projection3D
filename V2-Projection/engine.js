@@ -1,8 +1,6 @@
 //!!!!!!!! Commande à lancer avant de lancer le site !!!!!!!!!!\\
 // python -m http.server 8000
 
-//Video à 26:41
-
 let gpu = new window.GPU.GPU();
 
 const canvas = document.getElementById('canvas');
@@ -278,7 +276,7 @@ class CubeMesh {
     async create() {
         try {
             //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-            await this.mesh.loadFromObjectFile("object/axis.obj");
+            await this.mesh.loadFromObjectFile("object/mountains.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -419,7 +417,7 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
             let clippedTriangles = 0;
             let clipped = [new Triangle(), new Triangle()];
-            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,1), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
+            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,0.1), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
 
             for (let n = 0; n < clippedTriangles; n++)
             {
@@ -471,19 +469,79 @@ function sortTriangles() {
     });
 }
 
+// function drawTriangles() {
+//     for(let projected_triangle of triangleToShow) {
+//         ctx.beginPath();
+//         ctx.moveTo(projected_triangle.pos[0].x, projected_triangle.pos[0].y);
+//         ctx.lineTo(projected_triangle.pos[1].x, projected_triangle.pos[1].y);
+//         ctx.lineTo(projected_triangle.pos[2].x, projected_triangle.pos[2].y);
+//         ctx.closePath();
+//
+//         ctx.fillStyle = projected_triangle.color;
+//         ctx.strokeStyle = projected_triangle.color;
+//         ctx.fill();
+//         ctx.stroke();
+//     }
+// }
+
 function drawTriangles() {
     for(let projected_triangle of triangleToShow) {
-        ctx.beginPath();
-        ctx.moveTo(projected_triangle.pos[0].x, projected_triangle.pos[0].y);
-        ctx.lineTo(projected_triangle.pos[1].x, projected_triangle.pos[1].y);
-        ctx.lineTo(projected_triangle.pos[2].x, projected_triangle.pos[2].y);
-        ctx.closePath();
+        let clipped = [new Triangle(), new Triangle()];
+        let listTriangle = [];
+        listTriangle.push(projected_triangle);
+        let nbNewTriangle = 1;
 
-        ctx.fillStyle = projected_triangle.color;
-        ctx.strokeStyle = projected_triangle.color;
-        ctx.fill();
-        ctx.stroke();
+        for (let p = 0; p < 4; p++) {
+            let triangleToAdd = 0;
+
+            while (nbNewTriangle > 0) {
+                let test = listTriangle[0];
+                listTriangle.shift();
+                nbNewTriangle--;
+
+                switch (p) {
+                    case 0:
+                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(0,0,0), new Vector3D(0,1,0), test, clipped[0], clipped[1]);
+                        break;
+                    case 1:
+                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(0,height - 1,0), new Vector3D(0,- 1,0), test, clipped[0], clipped[1]);
+                        break;
+                    case 2:
+                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(0,0,0), new Vector3D(1,0,0), test, clipped[0], clipped[1]);
+                        break;
+                    case 3:
+                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(width - 1,0,0), new Vector3D(- 1,0,0), test, clipped[0], clipped[1]);
+                        break;
+                }
+
+                for (let w = 0; w < triangleToAdd; w++) {
+                    listTriangle.push(clipped[w]);
+                }
+            }
+
+            nbNewTriangle = listTriangle.length;
+        }
+
+
+        // Draw the transformed, viewed, clipped, projected, sorted, clipped triangles
+        for (let t of listTriangle)
+        {
+            fillTraingle(t);
+        }
     }
+}
+
+function fillTraingle(triangle){
+    ctx.beginPath();
+    ctx.moveTo(triangle.pos[0].x, triangle.pos[0].y);
+    ctx.lineTo(triangle.pos[1].x, triangle.pos[1].y);
+    ctx.lineTo(triangle.pos[2].x, triangle.pos[2].y);
+    ctx.closePath();
+
+    ctx.fillStyle = triangle.color;
+    ctx.strokeStyle = triangle.color;
+    ctx.fill();
+    ctx.stroke();
 }
 
 var camera = new Vector3D();
@@ -493,9 +551,10 @@ var yaw=0
 // FPS variables
 let frameCount = 0;
 let lastTime = performance.now();
+let lastTimeFPS = performance.now();
 let fps = 0;
 
-let speed = 8.0;
+let speed = 16;
 let keys = {};
 
 let sensitivity = 0.01;
@@ -565,35 +624,29 @@ function updateCamera(fElapsedTime) {
     if (keys['ArrowRight']) {
         yaw += 2 * fElapsedTime;
     }
-
-
-
 }
 
 
 function animate() {
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - lastTime) / 1000;
+    lastTime = currentTime;
     ctx.clearRect(0, 0, width, height);
     triangleToShow = [];
 
-    const angleX = performance.now() / 1000;
-    const angleY = performance.now() / 1000;
-    const angleZ = performance.now() / 1000;
-
     mesh.draw(0,0, 0);
 
-    let fElapsedTime = 0.016;
-    updateCamera(fElapsedTime);
+    updateCamera(deltaTime);
 
     sortTriangles();
     drawTriangles();
 
     // Calcul des FPS
-    const currentTime = performance.now();
     frameCount++;
-    if (currentTime > lastTime + 1000) {
-        fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+    if (currentTime > lastTimeFPS + 1000) {
+        fps = Math.round((frameCount * 1000) / (currentTime - lastTimeFPS));
         frameCount = 0;
-        lastTime = currentTime;
+        lastTimeFPS = currentTime;
     }
 
     // Affichage des FPS en haut à droite du canvas
