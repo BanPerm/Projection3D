@@ -92,12 +92,17 @@ class Vector3D {
     static clipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2){
         plane_n.normalise();
 
+        function dist(p) {
+            //p.normalise();
+            return (plane_n.x * p.x + plane_n.y * p.y + plane_n.z * p.z - Vector3D.dotProductVector(plane_n, plane_p));
+        }
+
         let inside_points = [];
         let outside_points = [];
 
-        let d0 = dist(in_tri.pos[0], plane_n, plane_p);
-        let d1 = dist(in_tri.pos[1], plane_n, plane_p);
-        let d2 = dist(in_tri.pos[2], plane_n, plane_p);
+        let d0 = dist(in_tri.pos[0]);
+        let d1 = dist(in_tri.pos[1]);
+        let d2 = dist(in_tri.pos[2]);
 
         if (d0 >= 0) { inside_points.push(in_tri.pos[0]); } else { outside_points.push(in_tri.pos[0]); }
         if (d1 >= 0) { inside_points.push(in_tri.pos[1]); } else { outside_points.push(in_tri.pos[1]); }
@@ -108,38 +113,33 @@ class Vector3D {
         }
 
         if (inside_points.length === 3) {
-            out_tri1.pos = [...in_tri.pos];
+            out_tri1.pos = in_tri.pos;
             return 1;
         }
 
         if (inside_points.length === 1 && outside_points.length === 2) {
-            // The inside point is valid, so keep that...
             out_tri1.pos[0] = inside_points[0];
+            out_tri1.color = 'yellow';
 
-            // but the two new points are at the locations where the
-            // original sides of the triangle (lines) intersect with the plane
             out_tri1.pos[1] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
             out_tri1.pos[2] =  Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1]);
 
-            return 1; // Return the newly formed single triangle
+            return 1;
         }
 
         if (inside_points.length === 2 && outside_points.length === 1) {
-            // The first triangle consists of the two inside points and a new
-            // point determined by the location where one side of the triangle
-            // intersects with the plane
+            out_tri1.color =  'blue';
+            out_tri2.color =  'red';
+
             out_tri1.pos[0] = inside_points[0];
             out_tri1.pos[1] = inside_points[1];
             out_tri1.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
 
-            // The second triangle is composed of one of he inside points, a
-            // new point determined by the intersection of the other side of the
-            // triangle and the plane, and the newly created point above
             out_tri2.pos[0] = inside_points[1];
             out_tri2.pos[1] = out_tri1.pos[2];
             out_tri2.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
 
-            return 2; // Return two newly formed triangles which form a quad
+            return 2;
         }
 
     }
@@ -198,6 +198,7 @@ class Matrice{
 
         let u = Vector3D.multiplyVector(forward, Vector3D.dotProductVector(up, forward));
         let newUp = Vector3D.substractVector(up, u);
+        newUp.normalise();
 
         let right = Vector3D.crossProduct(newUp,forward);
 
@@ -319,12 +320,6 @@ function rotation_x(angle) {
     ];
 }
 
-// Fonction pour calculer la distance signée la plus courte du point au plan
-function dist(p, plane_n, plane_p) {
-    //p.normalise();
-    return (plane_n.x * p.x + plane_n.y * p.y + plane_n.z * p.z - Vector3D.dotProductVector(plane_n, plane_p));
-}
-
 function rotation_y(angle){
     return [
         [Math.cos(angle), 0, Math.sin(angle), 0],
@@ -417,7 +412,7 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
             let clippedTriangles = 0;
             let clipped = [new Triangle(), new Triangle()];
-            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,0.1), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
+            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,5), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
 
             for (let n = 0; n < clippedTriangles; n++)
             {
@@ -432,7 +427,12 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                 projected_triangle.pos[1] = Vector3D.divideVector(projected_triangle.pos[1], projected_triangle.pos[1].w);
                 projected_triangle.pos[2] = Vector3D.divideVector(projected_triangle.pos[2], projected_triangle.pos[2].w);
 
-                projected_triangle.color = getColour(dp);
+                if(clipped[n].color!=='white'){
+                    projected_triangle.color = clipped[n].color;
+                }
+                else{
+                    projected_triangle.color = getColour(dp);
+                }
 
                 let offset = new Vector3D(0, 0, 0);
 
@@ -467,6 +467,7 @@ function sortTriangles() {
         const z2 = (t2.pos[0].z + t2.pos[1].z + t2.pos[2].z) / 3.0;
         return z2 - z1;
     });
+    drawTriangles();
 }
 
 // function drawTriangles() {
@@ -486,61 +487,65 @@ function sortTriangles() {
 
 function drawTriangles() {
     for(let projected_triangle of triangleToShow) {
-        let clipped = [new Triangle(), new Triangle()];
-        let listTriangle = [];
-        listTriangle.push(projected_triangle);
-        let nbNewTriangle = 1;
+        let listTriangles = [];
+        listTriangles.push(projected_triangle);
 
+        let nNewTriangles = 1;
+
+        // Clipping against four edges of the screen
         for (let p = 0; p < 4; p++) {
-            let triangleToAdd = 0;
+            let nTrisToAdd = 0;
+            let newListTriangles = [];
 
-            while (nbNewTriangle > 0) {
-                let test = listTriangle[0];
-                listTriangle.shift();
-                nbNewTriangle--;
+            while (nNewTriangles > 0) {
+                let test = listTriangles.shift();
+                nNewTriangles--;
 
+                let clipped = [new Triangle(), new Triangle()];
                 switch (p) {
-                    case 0:
-                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(0,0,0), new Vector3D(0,1,0), test, clipped[0], clipped[1]);
+                    case 0: // Top
+                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D(0, 0, 0), new Vector3D(0, 1, 0), test, clipped[0], clipped[1]);
                         break;
-                    case 1:
-                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(0,height - 1,0), new Vector3D(0,- 1,0), test, clipped[0], clipped[1]);
+                    case 1: // Bottom
+                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D(0, (height-50)-1, 0), new Vector3D(0, -1, 0), test, clipped[0], clipped[1]);
                         break;
-                    case 2:
-                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(0,0,0), new Vector3D(1,0,0), test, clipped[0], clipped[1]);
+                    case 2: // Left
+                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D(0, 0, 0), new Vector3D(1, 0, 0), test, clipped[0], clipped[1]);
                         break;
-                    case 3:
-                        triangleToAdd = Vector3D.clipAgainstPlane(new Vector3D(width - 1,0,0), new Vector3D(- 1,0,0), test, clipped[0], clipped[1]);
+                    case 3: // Right
+                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D((width-50)-1, 0, 0), new Vector3D(-1, 0, 0), test, clipped[0], clipped[1]);
                         break;
                 }
 
-                for (let w = 0; w < triangleToAdd; w++) {
-                    listTriangle.push(clipped[w]);
+                for (let w = 0; w < nTrisToAdd; w++) {
+                    if(clipped[w].color==='white'){
+                        clipped[w].color = projected_triangle.color;
+                    }
+                    newListTriangles.push(clipped[w]);
                 }
             }
 
-            nbNewTriangle = listTriangle.length;
+            listTriangles = newListTriangles;
+            nNewTriangles = listTriangles.length;
         }
 
-
-        // Draw the transformed, viewed, clipped, projected, sorted, clipped triangles
-        for (let t of listTriangle)
-        {
-            fillTraingle(t);
+        // Draw each triangle
+        for (let t of listTriangles) {
+            fillTriangle(t);
         }
     }
 }
 
-function fillTraingle(triangle){
+// Exemple de fonction pour remplir un triangle
+function fillTriangle(triangle) {
     ctx.beginPath();
     ctx.moveTo(triangle.pos[0].x, triangle.pos[0].y);
     ctx.lineTo(triangle.pos[1].x, triangle.pos[1].y);
     ctx.lineTo(triangle.pos[2].x, triangle.pos[2].y);
     ctx.closePath();
-
     ctx.fillStyle = triangle.color;
-    ctx.strokeStyle = triangle.color;
     ctx.fill();
+    ctx.strokeStyle = triangle.color;
     ctx.stroke();
 }
 
@@ -554,7 +559,9 @@ let lastTime = performance.now();
 let lastTimeFPS = performance.now();
 let fps = 0;
 
-let speed = 16;
+let normalSpeed = 16;
+let boostedSpeed = 64;
+let speed = normalSpeed;
 let keys = {};
 
 let sensitivity = 0.01;
@@ -582,47 +589,46 @@ document.addEventListener('pointerlockchange', () => {
 document.addEventListener('mousemove', handleMouseMove);
 
 window.addEventListener('keydown', function(e) {
-    keys[e.key] = true;
+    keys[e.key.toLowerCase()] = true;
+    e.preventDefault();
 });
 
 window.addEventListener('keyup', function(e) {
-    keys[e.key] = false;
+    keys[e.key.toLowerCase()] = false;
+    e.preventDefault();
 });
 
-// Fonction pour mettre à jour la position de la caméra
 function updateCamera(fElapsedTime) {
-    let forward = Vector3D.multiplyVector(lookDirection, speed*fElapsedTime);
+    if (keys['shift']) {
+        speed = boostedSpeed;
+    } else {
+        speed = normalSpeed;
+    }
+
+    let forward = Vector3D.multiplyVector(lookDirection, speed * fElapsedTime);
+
+    // Mouvement vertical
     if (keys[' ']) {
         camera.y += speed * fElapsedTime; // Déplace vers le haut
     }
-    if (keys['Control']) {
+    if (keys['control']) {
         camera.y -= speed * fElapsedTime; // Déplace vers le bas
     }
 
-    if (keys['Z'] || keys['z']) {
-        camera = Vector3D.addVector3D(camera,forward);
+    // Mouvement avant/arrière
+    if (keys['z']) {
+        camera = Vector3D.addVector3D(camera, forward);
+    }
+    if (keys['s']) {
+        camera = Vector3D.substractVector(camera, forward);
     }
 
-    if (keys['S'] || keys['s']) {
-        camera = Vector3D.substractVector(camera,forward);
+    // Mouvement gauche/droite
+    if (keys['q']) {
+        camera.x -= speed * fElapsedTime; // Déplace à gauche
     }
-
-    if (keys['Q'] || keys['q']) {
-        camera.x += speed * fElapsedTime;	// Déplace à gauche
-    }
-
-    if (keys['D'] || keys['d']) {
-        camera.x -= speed * fElapsedTime;	// Déplace à droite
-    }
-
-    //Mouvement de rotation
-
-    if (keys['ArrowLeft']) {
-        yaw -= 2 * fElapsedTime;
-    }
-
-    if (keys['ArrowRight']) {
-        yaw += 2 * fElapsedTime;
+    if (keys['d']) {
+        camera.x += speed * fElapsedTime; // Déplace à droite
     }
 }
 
@@ -639,7 +645,7 @@ function animate() {
     updateCamera(deltaTime);
 
     sortTriangles();
-    drawTriangles();
+
 
     // Calcul des FPS
     frameCount++;
