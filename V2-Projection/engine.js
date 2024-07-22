@@ -114,12 +114,13 @@ class Vector3D {
 
         if (inside_points.length === 3) {
             out_tri1.pos = in_tri.pos;
+            out_tri1.color = in_tri.color;
             return 1;
         }
 
         if (inside_points.length === 1 && outside_points.length === 2) {
             out_tri1.pos[0] = inside_points[0];
-            out_tri1.color = 'yellow';
+            out_tri1.color = in_tri.color;
 
             out_tri1.pos[1] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
             out_tri1.pos[2] =  Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1]);
@@ -128,8 +129,8 @@ class Vector3D {
         }
 
         if (inside_points.length === 2 && outside_points.length === 1) {
-            out_tri1.color =  'blue';
-            out_tri2.color =  'red';
+            out_tri1.color = in_tri.color;
+            out_tri2.color = in_tri.color;
 
             out_tri1.pos[0] = inside_points[0];
             out_tri1.pos[1] = inside_points[1];
@@ -412,7 +413,7 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
             let clippedTriangles = 0;
             let clipped = [new Triangle(), new Triangle()];
-            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,5), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
+            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,0.1), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
 
             for (let n = 0; n < clippedTriangles; n++)
             {
