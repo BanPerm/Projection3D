@@ -22,6 +22,14 @@ const fovRad = 1 / Math.tan((fov * 0.5) / 180 * Math.PI);
 //Variable globale
 let triangleToShow = [];
 
+
+class Vector2D{
+    constructor(u=0, v=0) {
+        this.u = u;
+        this.v = v;
+    }
+}
+
 // Définition de mes classes de base
 class Vector3D {
     constructor(x=0, y=0, z=0,w=1) {
@@ -78,16 +86,18 @@ class Vector3D {
         return v;
     }
 
-    static intersectPlane(plane_p, plane_n,lineStart, lineEnd){
+    static intersectPlane(plane_p, plane_n, lineStart, lineEnd) {
         plane_n.normalise();
-        let plane_d = -Vector3D.dotProductVector(plane_n,plane_p);
+        let plane_d = -Vector3D.dotProductVector(plane_n, plane_p);
         let ad = Vector3D.dotProductVector(lineStart, plane_n);
         let bd = Vector3D.dotProductVector(lineEnd, plane_n);
         let t = (-plane_d - ad) / (bd - ad);
-        let lineStartToEnd = Vector3D.substractVector(lineEnd,lineStart);
+        let lineStartToEnd = Vector3D.substractVector(lineEnd, lineStart);
         let lineToIntersect = Vector3D.multiplyVector(lineStartToEnd, t);
-        return Vector3D.addVector3D(lineStart, lineToIntersect);
+        let intersectionPoint = Vector3D.addVector3D(lineStart, lineToIntersect);
+        return { point: intersectionPoint, t: t };
     }
+
 
     static clipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2){
         plane_n.normalise();
@@ -99,14 +109,18 @@ class Vector3D {
 
         let inside_points = [];
         let outside_points = [];
+        let inside_tex = [];
+        let outside_tex = [];
 
         let d0 = dist(in_tri.pos[0]);
         let d1 = dist(in_tri.pos[1]);
         let d2 = dist(in_tri.pos[2]);
 
-        if (d0 >= 0) { inside_points.push(in_tri.pos[0]); } else { outside_points.push(in_tri.pos[0]); }
-        if (d1 >= 0) { inside_points.push(in_tri.pos[1]); } else { outside_points.push(in_tri.pos[1]); }
-        if (d2 >= 0) { inside_points.push(in_tri.pos[2]); } else { outside_points.push(in_tri.pos[2]); }
+        if (d0 >= 0) { inside_points.push(in_tri.pos[0]); inside_tex.push(in_tri.texture[0]); } else { outside_points.push(in_tri.pos[0]); outside_tex.push(in_tri.texture[0]); }
+        if (d1 >= 0) { inside_points.push(in_tri.pos[1]); inside_tex.push(in_tri.texture[1]); } else { outside_points.push(in_tri.pos[1]); outside_tex.push(in_tri.texture[1]);}
+        if (d2 >= 0) { inside_points.push(in_tri.pos[2]); inside_tex.push(in_tri.texture[2]);} else { outside_points.push(in_tri.pos[2]); outside_tex.push(in_tri.texture[2]);}
+
+        console.log(in_tri.texture);
 
         if (inside_points.length === 0) {
             return 0;
@@ -122,8 +136,24 @@ class Vector3D {
             out_tri1.pos[0] = inside_points[0];
             out_tri1.color = in_tri.color;
 
-            out_tri1.pos[1] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
-            out_tri1.pos[2] =  Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1]);
+            out_tri1.texture[0] = inside_tex[0];
+
+            let t;
+            let result;
+
+            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+            out_tri1.pos[1] = result.point;
+            t = result.t;
+
+            out_tri1.texture[1].u = t * (outside_tex[0].u - inside_tex[0].u) + inside_tex[0].u;
+            out_tri1.texture[1].v = t * (outside_tex[0].v - inside_tex[0].v) + inside_tex[0].v;
+
+            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1],t);
+            out_tri1.pos[2] =  result.point;
+            t = result.t;
+
+            out_tri1.texture[2].u = t * (outside_tex[1].u - inside_tex[0].u) + inside_tex[0].u;
+            out_tri1.texture[2].v = t * (outside_tex[1].v - inside_tex[0].v) + inside_tex[0].v;
 
             return 1;
         }
@@ -134,11 +164,28 @@ class Vector3D {
 
             out_tri1.pos[0] = inside_points[0];
             out_tri1.pos[1] = inside_points[1];
-            out_tri1.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+
+            out_tri1.texture[0] = inside_tex[0];
+            out_tri1.texture[1] = inside_tex[1];
+
+            let result;
+            let t;
+
+            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+
+            out_tri1.pos[2] = result.point;
+            t = result.t;
 
             out_tri2.pos[0] = inside_points[1];
             out_tri2.pos[1] = out_tri1.pos[2];
-            out_tri2.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
+
+            out_tri2.texture[0] = inside_tex[1];
+            out_tri2.texture[1] = out_tri1.texture[2];
+
+
+            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
+            out_tri2.pos[2] = result.point;
+            t = result.t;
 
             return 2;
         }
@@ -223,9 +270,10 @@ class Matrice{
 }
 
 class Triangle {
-    constructor(p1, p2, p3) {
+    constructor(p1=new Vector3D(), p2=new Vector3D(), p3=new Vector3D(), t1=new Vector2D(), t2=new Vector2D(), t3=new Vector2D()) {
         this.pos = [p1, p2, p3];
         this.color = 'white';
+        this.texture = [t1, t2, t3];
     }
 }
 
@@ -276,21 +324,132 @@ class CubeMesh {
     }
 
     async create() {
-        try {
-            //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-            await this.mesh.loadFromObjectFile("object/mountains.obj");
-            this.initialMesh.pos = this.mesh.pos.map(tri =>
-                new Triangle(
-                    new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
-                    new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-                    new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
-                )
-            );
+        // try {
+        //     //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
+        //     await this.mesh.loadFromObjectFile("object/mountains.obj");
+        //     this.initialMesh.pos = this.mesh.pos.map(tri =>
+        //         new Triangle(
+        //             new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
+        //             new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
+        //             new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
+        //         )
+        //     );
+        //
+        //     console.log(this.mesh.pos);
+        // } catch (error) {
+        //     console.error('Failed to create mesh:', error);
+        // }
 
-            console.log(this.mesh.pos);
-        } catch (error) {
-            console.error('Failed to create mesh:', error);
-        }
+        this.initialMesh.pos = [
+            // SOUTH
+            new Triangle(
+                new Vector3D(0, 0, 0, 1),
+                new Vector3D(0, 1, 0, 1),
+                new Vector3D(1, 1, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(0, 0),
+                new Vector2D(1, 0)
+            ),
+            new Triangle(
+                new Vector3D(0, 0, 0, 1),
+                new Vector3D(1, 1, 0, 1),
+                new Vector3D(1, 0, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(1, 0),
+                new Vector2D(1, 1)
+            ),
+
+            // EAST
+            new Triangle(
+                new Vector3D(1, 0, 0, 1),
+                new Vector3D(1, 1, 0, 1),
+                new Vector3D(1, 1, 1, 1),
+                new Vector2D(0, 1),
+                new Vector2D(0, 0),
+                new Vector2D(1, 0)
+            ),
+            new Triangle(
+                new Vector3D(1, 0, 0, 1),
+                new Vector3D(1, 1, 1, 1),
+                new Vector3D(1, 0, 1, 1),
+                new Vector2D(0, 1),
+                new Vector2D(1, 0),
+                new Vector2D(1, 1)
+            ),
+
+            // NORTH
+            new Triangle(
+                new Vector3D(1, 0, 1, 1),
+                new Vector3D(1, 1, 1, 1),
+                new Vector3D(0, 1, 1, 1),
+                new Vector2D(0, 1),
+                new Vector2D(0, 0),
+                new Vector2D(1, 0)
+            ),
+            new Triangle(
+                new Vector3D(1, 0, 1, 1),
+                new Vector3D(0, 1, 1, 1),
+                new Vector3D(0, 0, 1, 1),
+                new Vector2D(0, 1),
+                new Vector2D(1, 0),
+                new Vector2D(1, 1)
+            ),
+
+            // WEST
+            new Triangle(
+                new Vector3D(0, 0, 1, 1),
+                new Vector3D(0, 1, 1, 1),
+                new Vector3D(0, 1, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(0, 0),
+                new Vector2D(1, 0)
+            ),
+            new Triangle(
+                new Vector3D(0, 0, 1, 1),
+                new Vector3D(0, 1, 0, 1),
+                new Vector3D(0, 0, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(1, 0),
+                new Vector2D(1, 1)
+            ),
+
+            // TOP
+            new Triangle(
+                new Vector3D(0, 1, 0, 1),
+                new Vector3D(0, 1, 1, 1),
+                new Vector3D(1, 1, 1, 1),
+                new Vector2D(0, 1),
+                new Vector2D(0, 0),
+                new Vector2D(1, 0)
+            ),
+            new Triangle(
+                new Vector3D(0, 1, 0, 1),
+                new Vector3D(1, 1, 1, 1),
+                new Vector3D(1, 1, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(1, 0),
+                new Vector2D(1, 1)
+            ),
+
+            // BOTTOM
+            new Triangle(
+                new Vector3D(1, 0, 1, 1),
+                new Vector3D(0, 0, 1, 1),
+                new Vector3D(0, 0, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(0, 0),
+                new Vector2D(1, 0)
+            ),
+            new Triangle(
+                new Vector3D(1, 0, 1, 1),
+                new Vector3D(0, 0, 0, 1),
+                new Vector3D(1, 0, 0, 1),
+                new Vector2D(0, 1),
+                new Vector2D(1, 0),
+                new Vector2D(1, 1)
+            )
+        ];
+
     }
 
     reset() {
@@ -298,7 +457,10 @@ class CubeMesh {
             new Triangle(
                 new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
                 new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
+                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z),
+                new Vector2D(tri.texture[0].u, tri.texture[0].v),
+                new Vector2D(tri.texture[1].u, tri.texture[1].v),
+                new Vector2D(tri.texture[2].u, tri.texture[2].v)
             )
         );
     }
@@ -421,7 +583,10 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                 let projected_triangle = new Triangle(
                     Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[0]),
                     Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[1]),
-                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[2])
+                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[2]),
+                    clipped[n].texture[0],
+                    clipped[n].texture[1],
+                    clipped[n].texture[2]
                 );
 
                 projected_triangle.pos[0] = Vector3D.divideVector(projected_triangle.pos[0], projected_triangle.pos[0].w);
@@ -544,9 +709,10 @@ function fillTriangle(triangle) {
     ctx.lineTo(triangle.pos[1].x, triangle.pos[1].y);
     ctx.lineTo(triangle.pos[2].x, triangle.pos[2].y);
     ctx.closePath();
-    ctx.fillStyle = triangle.color;
-    ctx.fill();
-    ctx.strokeStyle = triangle.color;
+    // ctx.fillStyle = triangle.color;
+    // ctx.fill();
+    // ctx.strokeStyle = triangle.color;
+    ctx.strokeStyle = 'white';
     ctx.stroke();
 }
 
@@ -626,10 +792,10 @@ function updateCamera(fElapsedTime) {
 
     // Mouvement gauche/droite
     if (keys['q']) {
-        camera.x -= speed * fElapsedTime; // Déplace à gauche
+        camera.x += speed * fElapsedTime; // Déplace à gauche
     }
     if (keys['d']) {
-        camera.x += speed * fElapsedTime; // Déplace à droite
+        camera.x -= speed * fElapsedTime; // Déplace à droite
     }
 }
 
