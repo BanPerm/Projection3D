@@ -1,8 +1,6 @@
 //!!!!!!!! Commande à lancer avant de lancer le site !!!!!!!!!!\\
 // python -m http.server 8000
 
-let gpu = new window.GPU.GPU();
-
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -22,13 +20,9 @@ const fovRad = 1 / Math.tan((fov * 0.5) / 180 * Math.PI);
 //Variable globale
 let triangleToShow = [];
 
-
-class Vector2D{
-    constructor(u=0, v=0) {
-        this.u = u;
-        this.v = v;
-    }
-}
+//Paramètre (pour éco des ressources)
+let ombrage = false;
+let clipping = false;
 
 // Définition de mes classes de base
 class Vector3D {
@@ -45,6 +39,16 @@ class Vector3D {
 
     lengthVector(){
         return Math.sqrt(Vector3D.dotProductVector(this,this));
+    }
+
+    scale(scalar) {
+        return new Vector3D(this.x * scalar, this.y * scalar, this.z * scalar);
+    }
+
+    add(vector){
+        this.x += vector.x;
+        this.y += vector.y;
+        this.z += vector.z;
     }
 
     normalise(){
@@ -86,18 +90,16 @@ class Vector3D {
         return v;
     }
 
-    static intersectPlane(plane_p, plane_n, lineStart, lineEnd) {
+    static intersectPlane(plane_p, plane_n,lineStart, lineEnd){
         plane_n.normalise();
-        let plane_d = -Vector3D.dotProductVector(plane_n, plane_p);
+        let plane_d = -Vector3D.dotProductVector(plane_n,plane_p);
         let ad = Vector3D.dotProductVector(lineStart, plane_n);
         let bd = Vector3D.dotProductVector(lineEnd, plane_n);
         let t = (-plane_d - ad) / (bd - ad);
-        let lineStartToEnd = Vector3D.substractVector(lineEnd, lineStart);
+        let lineStartToEnd = Vector3D.substractVector(lineEnd,lineStart);
         let lineToIntersect = Vector3D.multiplyVector(lineStartToEnd, t);
-        let intersectionPoint = Vector3D.addVector3D(lineStart, lineToIntersect);
-        return { point: intersectionPoint, t: t };
+        return Vector3D.addVector3D(lineStart, lineToIntersect);
     }
-
 
     static clipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2){
         plane_n.normalise();
@@ -109,18 +111,14 @@ class Vector3D {
 
         let inside_points = [];
         let outside_points = [];
-        let inside_tex = [];
-        let outside_tex = [];
 
         let d0 = dist(in_tri.pos[0]);
         let d1 = dist(in_tri.pos[1]);
         let d2 = dist(in_tri.pos[2]);
 
-        if (d0 >= 0) { inside_points.push(in_tri.pos[0]); inside_tex.push(in_tri.texture[0]); } else { outside_points.push(in_tri.pos[0]); outside_tex.push(in_tri.texture[0]); }
-        if (d1 >= 0) { inside_points.push(in_tri.pos[1]); inside_tex.push(in_tri.texture[1]); } else { outside_points.push(in_tri.pos[1]); outside_tex.push(in_tri.texture[1]);}
-        if (d2 >= 0) { inside_points.push(in_tri.pos[2]); inside_tex.push(in_tri.texture[2]);} else { outside_points.push(in_tri.pos[2]); outside_tex.push(in_tri.texture[2]);}
-
-        console.log(in_tri.texture);
+        if (d0 >= 0) { inside_points.push(in_tri.pos[0]); } else { outside_points.push(in_tri.pos[0]); }
+        if (d1 >= 0) { inside_points.push(in_tri.pos[1]); } else { outside_points.push(in_tri.pos[1]); }
+        if (d2 >= 0) { inside_points.push(in_tri.pos[2]); } else { outside_points.push(in_tri.pos[2]); }
 
         if (inside_points.length === 0) {
             return 0;
@@ -136,24 +134,8 @@ class Vector3D {
             out_tri1.pos[0] = inside_points[0];
             out_tri1.color = in_tri.color;
 
-            out_tri1.texture[0] = inside_tex[0];
-
-            let t;
-            let result;
-
-            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
-            out_tri1.pos[1] = result.point;
-            t = result.t;
-
-            out_tri1.texture[1].u = t * (outside_tex[0].u - inside_tex[0].u) + inside_tex[0].u;
-            out_tri1.texture[1].v = t * (outside_tex[0].v - inside_tex[0].v) + inside_tex[0].v;
-
-            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1],t);
-            out_tri1.pos[2] =  result.point;
-            t = result.t;
-
-            out_tri1.texture[2].u = t * (outside_tex[1].u - inside_tex[0].u) + inside_tex[0].u;
-            out_tri1.texture[2].v = t * (outside_tex[1].v - inside_tex[0].v) + inside_tex[0].v;
+            out_tri1.pos[1] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+            out_tri1.pos[2] =  Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1]);
 
             return 1;
         }
@@ -164,28 +146,11 @@ class Vector3D {
 
             out_tri1.pos[0] = inside_points[0];
             out_tri1.pos[1] = inside_points[1];
-
-            out_tri1.texture[0] = inside_tex[0];
-            out_tri1.texture[1] = inside_tex[1];
-
-            let result;
-            let t;
-
-            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
-
-            out_tri1.pos[2] = result.point;
-            t = result.t;
+            out_tri1.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
 
             out_tri2.pos[0] = inside_points[1];
             out_tri2.pos[1] = out_tri1.pos[2];
-
-            out_tri2.texture[0] = inside_tex[1];
-            out_tri2.texture[1] = out_tri1.texture[2];
-
-
-            result = Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
-            out_tri2.pos[2] = result.point;
-            t = result.t;
+            out_tri2.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
 
             return 2;
         }
@@ -270,10 +235,9 @@ class Matrice{
 }
 
 class Triangle {
-    constructor(p1=new Vector3D(), p2=new Vector3D(), p3=new Vector3D(), t1=new Vector2D(), t2=new Vector2D(), t3=new Vector2D()) {
+    constructor(p1, p2, p3) {
         this.pos = [p1, p2, p3];
         this.color = 'white';
-        this.texture = [t1, t2, t3];
     }
 }
 
@@ -324,132 +288,21 @@ class CubeMesh {
     }
 
     async create() {
-        // try {
-        //     //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-        //     await this.mesh.loadFromObjectFile("object/mountains.obj");
-        //     this.initialMesh.pos = this.mesh.pos.map(tri =>
-        //         new Triangle(
-        //             new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
-        //             new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-        //             new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
-        //         )
-        //     );
-        //
-        //     console.log(this.mesh.pos);
-        // } catch (error) {
-        //     console.error('Failed to create mesh:', error);
-        // }
+        try {
+            //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
+            await this.mesh.loadFromObjectFile("object/mountains.obj");
+            this.initialMesh.pos = this.mesh.pos.map(tri =>
+                new Triangle(
+                    new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
+                    new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
+                    new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
+                )
+            );
 
-        this.initialMesh.pos = [
-            // SOUTH
-            new Triangle(
-                new Vector3D(0, 0, 0, 1),
-                new Vector3D(0, 1, 0, 1),
-                new Vector3D(1, 1, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(0, 0),
-                new Vector2D(1, 0)
-            ),
-            new Triangle(
-                new Vector3D(0, 0, 0, 1),
-                new Vector3D(1, 1, 0, 1),
-                new Vector3D(1, 0, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(1, 0),
-                new Vector2D(1, 1)
-            ),
-
-            // EAST
-            new Triangle(
-                new Vector3D(1, 0, 0, 1),
-                new Vector3D(1, 1, 0, 1),
-                new Vector3D(1, 1, 1, 1),
-                new Vector2D(0, 1),
-                new Vector2D(0, 0),
-                new Vector2D(1, 0)
-            ),
-            new Triangle(
-                new Vector3D(1, 0, 0, 1),
-                new Vector3D(1, 1, 1, 1),
-                new Vector3D(1, 0, 1, 1),
-                new Vector2D(0, 1),
-                new Vector2D(1, 0),
-                new Vector2D(1, 1)
-            ),
-
-            // NORTH
-            new Triangle(
-                new Vector3D(1, 0, 1, 1),
-                new Vector3D(1, 1, 1, 1),
-                new Vector3D(0, 1, 1, 1),
-                new Vector2D(0, 1),
-                new Vector2D(0, 0),
-                new Vector2D(1, 0)
-            ),
-            new Triangle(
-                new Vector3D(1, 0, 1, 1),
-                new Vector3D(0, 1, 1, 1),
-                new Vector3D(0, 0, 1, 1),
-                new Vector2D(0, 1),
-                new Vector2D(1, 0),
-                new Vector2D(1, 1)
-            ),
-
-            // WEST
-            new Triangle(
-                new Vector3D(0, 0, 1, 1),
-                new Vector3D(0, 1, 1, 1),
-                new Vector3D(0, 1, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(0, 0),
-                new Vector2D(1, 0)
-            ),
-            new Triangle(
-                new Vector3D(0, 0, 1, 1),
-                new Vector3D(0, 1, 0, 1),
-                new Vector3D(0, 0, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(1, 0),
-                new Vector2D(1, 1)
-            ),
-
-            // TOP
-            new Triangle(
-                new Vector3D(0, 1, 0, 1),
-                new Vector3D(0, 1, 1, 1),
-                new Vector3D(1, 1, 1, 1),
-                new Vector2D(0, 1),
-                new Vector2D(0, 0),
-                new Vector2D(1, 0)
-            ),
-            new Triangle(
-                new Vector3D(0, 1, 0, 1),
-                new Vector3D(1, 1, 1, 1),
-                new Vector3D(1, 1, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(1, 0),
-                new Vector2D(1, 1)
-            ),
-
-            // BOTTOM
-            new Triangle(
-                new Vector3D(1, 0, 1, 1),
-                new Vector3D(0, 0, 1, 1),
-                new Vector3D(0, 0, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(0, 0),
-                new Vector2D(1, 0)
-            ),
-            new Triangle(
-                new Vector3D(1, 0, 1, 1),
-                new Vector3D(0, 0, 0, 1),
-                new Vector3D(1, 0, 0, 1),
-                new Vector2D(0, 1),
-                new Vector2D(1, 0),
-                new Vector2D(1, 1)
-            )
-        ];
-
+            console.log(this.mesh.pos);
+        } catch (error) {
+            console.error('Failed to create mesh:', error);
+        }
     }
 
     reset() {
@@ -457,10 +310,7 @@ class CubeMesh {
             new Triangle(
                 new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
                 new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z),
-                new Vector2D(tri.texture[0].u, tri.texture[0].v),
-                new Vector2D(tri.texture[1].u, tri.texture[1].v),
-                new Vector2D(tri.texture[2].u, tri.texture[2].v)
+                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
             )
         );
     }
@@ -473,12 +323,47 @@ class CubeMesh {
     }
 }
 
+class Ray {
+    constructor(origin, direction) {
+        this.origin = origin;
+        this.direction = direction;
+    }
+
+    //Algo de Möller-Trumbore
+    intersectTriangle(triangle){
+        let vertex0 = triangle.pos[0];
+        let vertex1 = triangle.pos[1];
+        let vertex2 = triangle.pos[2];
+        let edge1 = Vector3D.substractVector(vertex1, vertex0);
+        let edge2 = Vector3D.substractVector(vertex2, vertex0);
+        let h = Vector3D.crossProduct(this.direction, edge2);
+        let a = Vector3D.dotProductVector(edge1, h);
+        if (a > -Number.EPSILON && a<Number.EPSILON){
+            return false;
+        }
+        let f = 1/a;
+        let s = Vector3D.substractVector(this.origin, vertex0);
+        let u = f* Vector3D.dotProductVector(s,h);
+        if (u<0 || u >1){
+            return false;
+        }
+        let q = Vector3D.crossProduct(s, edge1);
+        let v = f* Vector3D.dotProductVector(this.direction, q);
+        if (v<0 || u+v>1){
+            return false;
+        }
+        let t = f* Vector3D.dotProductVector(edge2,q);
+        return t > Number.EPSILON;
+    }
+}
+
+
 // Matrice de rotation
 function rotation_x(angle) {
     return [
         [1, 0, 0, 0],
-        [0, Math.cos(angle), Math.sin(angle), 0],
-        [0, -Math.sin(angle), Math.cos(angle), 0],
+        [0, Math.cos(angle), -Math.sin(angle), 0],
+        [0, Math.sin(angle), Math.cos(angle), 0],
         [0, 0, 0, 1]
     ];
 }
@@ -494,8 +379,8 @@ function rotation_y(angle){
 
 function rotation_z(angle) {
     return [
-        [Math.cos(angle), Math.sin(angle), 0, 0],
-        [-Math.sin(angle), Math.cos(angle), 0, 0],
+        [Math.cos(angle), -Math.sin(angle), 0, 0],
+        [Math.sin(angle), Math.cos(angle), 0, 0],
         [0, 0, 1, 0],
         [0, 0, 0, 1]
     ];
@@ -539,7 +424,7 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
     let up = new Vector3D(0,-1,0);
     let target = new Vector3D(0,0,1);
     let cameraRot = rotation_y(yaw);
-    lookDirection = Matrice.matriceMultiplyVector(cameraRot, target);
+    updateLookDirection();
     target = Vector3D.addVector3D(camera, lookDirection);
 
     let matCamera = Matrice.matriceAtPoint(camera,target,up);
@@ -567,6 +452,8 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
             let light_direction = new Vector3D(0, 0, -1);
             light_direction.normalise();
 
+            let ambientLight = 0.2;
+
             let dp = Math.max(0.1,Vector3D.dotProductVector(light_direction, normal));
 
             triangle.pos[0] = Matrice.matriceMultiplyVector(matView, triangle.pos[0]);
@@ -583,22 +470,57 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                 let projected_triangle = new Triangle(
                     Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[0]),
                     Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[1]),
-                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[2]),
-                    clipped[n].texture[0],
-                    clipped[n].texture[1],
-                    clipped[n].texture[2]
+                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[2])
                 );
 
                 projected_triangle.pos[0] = Vector3D.divideVector(projected_triangle.pos[0], projected_triangle.pos[0].w);
                 projected_triangle.pos[1] = Vector3D.divideVector(projected_triangle.pos[1], projected_triangle.pos[1].w);
                 projected_triangle.pos[2] = Vector3D.divideVector(projected_triangle.pos[2], projected_triangle.pos[2].w);
 
-                if(clipped[n].color!=='white'){
-                    projected_triangle.color = clipped[n].color;
+                if(ombrage){
+                    const samplePoints = [
+                        projected_triangle.pos[0],
+                        projected_triangle.pos[1],
+                        projected_triangle.pos[2]
+                    ];
+                    let shadowCount = 0;
+
+                    for (let point of samplePoints) {
+                        const rayOrigin = Vector3D.addVector3D(point, Vector3D.multiplyVector(light_direction, 0.1));
+                        const rayDirection = Vector3D.multiplyVector(light_direction, 1);
+
+                        const shadowRay = new Ray(rayOrigin, rayDirection);
+
+                        let inShadow = false;
+                        for (let otherTriangle of triangles) {
+                            if (otherTriangle === triangle) continue;
+
+                            if (shadowRay.intersectTriangle(otherTriangle)) {
+                                inShadow = true;
+                                break;
+                            }
+                        }
+
+                        if (inShadow) {
+                            shadowCount++;
+                        }
+                    }
+
+                    const totalSamples = samplePoints.length;
+                    const shadowIntensity = (totalSamples - shadowCount) / totalSamples;
+                    let finalIntensity = ambientLight + (1 - ambientLight) * dp * shadowIntensity;
+                    let grey = Math.floor(255 * finalIntensity);
+                    projected_triangle.color = `rgb(${grey}, ${grey}, ${grey})`;
                 }
                 else{
-                    projected_triangle.color = getColour(dp);
+                    if(clipped[n].color!=='white'){
+                        projected_triangle.color = clipped[n].color;
+                    }
+                    else{
+                        projected_triangle.color = getColour(dp);
+                    }
                 }
+
 
                 let offset = new Vector3D(0, 0, 0);
 
@@ -709,16 +631,16 @@ function fillTriangle(triangle) {
     ctx.lineTo(triangle.pos[1].x, triangle.pos[1].y);
     ctx.lineTo(triangle.pos[2].x, triangle.pos[2].y);
     ctx.closePath();
-    // ctx.fillStyle = triangle.color;
-    // ctx.fill();
-    // ctx.strokeStyle = triangle.color;
-    ctx.strokeStyle = 'white';
+    ctx.fillStyle = triangle.color;
+    ctx.fill();
+    ctx.strokeStyle = triangle.color;
     ctx.stroke();
 }
 
 var camera = new Vector3D();
 var lookDirection = new Vector3D();
-var yaw=0
+var yaw=0;
+var pitch = 0;
 
 // FPS variables
 let frameCount = 0;
@@ -737,8 +659,15 @@ let isPointerLocked = false;
 function handleMouseMove(event) {
     if (isPointerLocked) {
         const deltaX = event.movementX || event.mozMovementX || 0;
+        const deltaY = event.movementY || event.mozMovementY || 0;
 
         yaw += deltaX * sensitivity;
+        pitch -= deltaY * sensitivity;
+
+        const maxPitch = Math.PI / 2;
+        const minPitch = -Math.PI / 2;
+
+        pitch = Math.max(minPitch, Math.min(maxPitch, pitch));
     }
 }
 
@@ -772,7 +701,10 @@ function updateCamera(fElapsedTime) {
         speed = normalSpeed;
     }
 
+    let upVector = new Vector3D(0, 1, 0);
     let forward = Vector3D.multiplyVector(lookDirection, speed * fElapsedTime);
+    let right = Vector3D.crossProduct(lookDirection, upVector);
+    right.normalise();
 
     // Mouvement vertical
     if (keys[' ']) {
@@ -791,12 +723,13 @@ function updateCamera(fElapsedTime) {
     }
 
     // Mouvement gauche/droite
-    if (keys['q']) {
-        camera.x += speed * fElapsedTime; // Déplace à gauche
-    }
     if (keys['d']) {
-        camera.x -= speed * fElapsedTime; // Déplace à droite
+        camera.add(right.scale(speed * fElapsedTime));
     }
+    if (keys['q']) {
+        camera.add(right.scale(-speed * fElapsedTime));
+    }
+
 }
 
 
@@ -831,6 +764,14 @@ function animate() {
     requestAnimationFrame(animate);
 }
 
+function updateLookDirection() {
+    lookDirection.x = Math.cos(pitch) * Math.cos(yaw);
+    lookDirection.y = Math.sin(pitch);
+    lookDirection.z = Math.cos(pitch) * Math.sin(yaw);
+    lookDirection.normalise();
+}
+
+
 const mesh = new CubeMesh();
 mesh.create().then(() => {
     animate();
@@ -858,4 +799,3 @@ mesh.create().then(() => {
 //     const result = multiplyMatrixVector(matrice, vector.toArray());
 //     return Vector3D.fromArray(result);
 // }
-
