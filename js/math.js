@@ -1,4 +1,5 @@
 // Définition de mes classes de base
+
 export class Vector3D {
     constructor(x=0, y=0, z=0,w=1) {
         this.x = x;
@@ -7,80 +8,135 @@ export class Vector3D {
         this.w = w;
     }
 
-    toArray() {
-        return [this.x, this.y, this.z];
+    //Outil pour la mémoire
+    copy(vector) {
+        this.x = vector.x;
+        this.y = vector.y;
+        this.z = vector.z;
+        this.w = vector.w;
+        return this;
     }
 
-    lengthVector(){
-        return Math.sqrt(Vector3D.dotProductVector(this,this));
+    clone() {
+        return new Vector3D(this.x, this.y, this.z, this.w);
     }
 
-    scale(scalar) {
-        return new Vector3D(this.x * scalar, this.y * scalar, this.z * scalar);
+    set(x, y, z,w=1) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.w = w;
+        return this;
     }
+
+    //Opération mathématique
 
     add(vector){
         this.x += vector.x;
         this.y += vector.y;
         this.z += vector.z;
+        return this;
+    }
+
+    sub(vector){
+        this.x -= vector.x;
+        this.y -= vector.y;
+        this.z -= vector.z;
+        return this;
+    }
+
+    multiply(scalar){
+        this.x *= scalar;
+        this.y *= scalar;
+        this.z *= scalar;
+        return this;
+    }
+
+    divide(scalar){
+        if (scalar !== 0) {
+            const inv = 1 / scalar; // Multiplication est plus rapide que division
+            this.x *= inv;
+            this.y *= inv;
+            this.z *= inv;
+        }
+        return this;
     }
 
     normalise(){
         let l = this.lengthVector();
-        this.x = this.x / l;
-        this.y = this.y / l;
-        this.z = this.z / l;
+        if (l > 0) {
+            this.divide(l);
+        }
+        return this;
     }
 
-    static fromArray(array) {
-        return new Vector3D(array[0], array[1], array[2]);
+    lengthVector() {
+        return Math.sqrt(this.x * this.x + this.y * this.y + this.z * this.z);
     }
 
-    static addVector3D(vector, vector2) {
-        return new Vector3D(vector2.x + vector.x, vector2.y + vector.y, vector2.z + vector.z);
+    dotProduct(vector){
+        return this.x * vector.x + this.y * vector.y + this.z * vector.z;
     }
 
-    static substractVector(v1, v2) {
-        return new Vector3D( v1.x - v2.x, v1.y - v2.y, v1.z - v2.z );
+    //Static Method
+
+    static add(v1, v2, out = new Vector3D()) {
+        out.x = v1.x + v2.x;
+        out.y = v1.y + v2.y;
+        out.z = v1.z + v2.z;
+        return out;
     }
 
-    static divideVector(v1, divider) {
-        return new Vector3D( v1.x/divider, v1.y/divider, v1.z/divider);
+    static sub(v1, v2, out = new Vector3D()) {
+        out.x = v1.x - v2.x;
+        out.y = v1.y - v2.y;
+        out.z = v1.z - v2.z;
+        return out;
     }
 
-    static multiplyVector(v1, m) {
-        return new Vector3D( v1.x*m, v1.y*m, v1.z*m);
+    static multiply(v1, scalar, out = new Vector3D()) {
+        out.x = v1.x * scalar;
+        out.y = v1.y * scalar;
+        out.z = v1.z * scalar;
+        return out;
     }
 
-    static dotProductVector(v1, v2) {
-        return v1.x*v2.x + v1.y*v2.y + v1.z*v2.z;
+    static crossProduct(v1, v2, out = new Vector3D()) {
+        const x = v1.y * v2.z - v1.z * v2.y;
+        const y = v1.z * v2.x - v1.x * v2.z;
+        const z = v1.x * v2.y - v1.y * v2.x;
+        
+        out.x = x;
+        out.y = y;
+        out.z = z;
+        return out;
     }
 
-    static crossProduct(v1, v2) {
-        let v = new Vector3D();
-        v.x = v1.y * v2.z - v1.z * v2.y;
-        v.y = v1.z * v2.x - v1.x * v2.z;
-        v.z = v1.x * v2.y - v1.y * v2.x;
-        return v;
+    static dotProduct(v1, v2) {
+        return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
     }
 
-    static intersectPlane(plane_p, plane_n,lineStart, lineEnd){
+    static intersectPlane(plane_p, plane_n, lineStart, lineEnd, out = new Vector3D()) {
         plane_n.normalise();
-        let plane_d = -Vector3D.dotProductVector(plane_n,plane_p);
-        let ad = Vector3D.dotProductVector(lineStart, plane_n);
-        let bd = Vector3D.dotProductVector(lineEnd, plane_n);
+        let plane_d = -Vector3D.dotProduct(plane_n, plane_p);
+        let ad = Vector3D.dotProduct(lineStart, plane_n);
+        let bd = Vector3D.dotProduct(lineEnd, plane_n);
+
         let t = (-plane_d - ad) / (bd - ad);
-        let lineStartToEnd = Vector3D.substractVector(lineEnd,lineStart);
-        let lineToIntersect = Vector3D.multiplyVector(lineStartToEnd, t);
-        return Vector3D.addVector3D(lineStart, lineToIntersect);
+
+
+        Vector3D.sub(lineEnd, lineStart, tempLineStartToEnd);
+        Vector3D.multiply(tempLineStartToEnd, t, tempLineToIntersect);
+        Vector3D.add(lineStart, tempLineToIntersect, out);
+    
+        return out;
     }
 
     static clipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2){
         plane_n.normalise();
 
         function dist(p) {
-            //p.normalise();
-            return (plane_n.x * p.x + plane_n.y * p.y + plane_n.z * p.z - Vector3D.dotProductVector(plane_n, plane_p));
+            return (plane_n.x * p.x + plane_n.y * p.y + plane_n.z * p.z - Vector3D.dotProduct(plane_n, plane_p));
         }
 
         let inside_points = [];
@@ -108,8 +164,8 @@ export class Vector3D {
             out_tri1.pos[0] = inside_points[0];
             out_tri1.color = in_tri.color;
 
-            out_tri1.pos[1] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
-            out_tri1.pos[2] =  Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1]);
+            Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0], out_tri1.pos[1]);
+            Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1], out_tri1.pos[2]);
 
             return 1;
         }
@@ -120,11 +176,11 @@ export class Vector3D {
 
             out_tri1.pos[0] = inside_points[0];
             out_tri1.pos[1] = inside_points[1];
-            out_tri1.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0]);
+            Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0], out_tri1.pos[2]);
 
             out_tri2.pos[0] = inside_points[1];
             out_tri2.pos[1] = out_tri1.pos[2];
-            out_tri2.pos[2] = Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0]);
+            Vector3D.intersectPlane(plane_p, plane_n, inside_points[1], outside_points[0], out_tri2.pos[2]);
 
             return 2;
         }
@@ -132,6 +188,10 @@ export class Vector3D {
     }
 
 }
+
+const tempLineStartToEnd = new Vector3D();
+const tempLineToIntersect = new Vector3D();
+const tempResult = new Vector3D();
 
 //Sert juste pour simplifier les opération sur les différentes matrices dans le code
 export class Matrice{
@@ -180,11 +240,11 @@ export class Matrice{
 
     static matriceAtPoint(pos,target,up){
 
-        let forward = Vector3D.substractVector(target,pos);
+        let forward = Vector3D.sub(target,pos);
         forward.normalise();
 
-        let u = Vector3D.multiplyVector(forward, Vector3D.dotProductVector(up, forward));
-        let newUp = Vector3D.substractVector(up, u);
+        let u = Vector3D.multiply(forward, Vector3D.dotProduct(up, forward));
+        let newUp = Vector3D.sub(up, u);
         newUp.normalise();
 
         let right = Vector3D.crossProduct(newUp,forward);

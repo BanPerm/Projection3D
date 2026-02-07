@@ -3,8 +3,28 @@ import { CONFIG, engineState, PROJECTION } from "./state.js";
 
 export class Triangle {
     constructor(p1, p2, p3) {
-        this.pos = [p1, p2, p3];
+        this.pos = [
+            p1 || new Vector3D(),
+            p2 || new Vector3D(),
+            p3 || new Vector3D()
+        ];
         this.color = 'white';
+    }
+
+    //Outil pour la mémoire
+    copy(triangle) {
+        this.pos[0].copy(triangle.pos[0]);
+        this.pos[1].copy(triangle.pos[1]);
+        this.pos[2].copy(triangle.pos[2]);
+        this.color = triangle.color;
+        return this;
+    }
+
+    set(p1, p2, p3) {
+        this.pos[0].copy(p1);
+        this.pos[1].copy(p2);
+        this.pos[2].copy(p3);
+        return this;
     }
 }
 
@@ -56,8 +76,8 @@ export class CubeMesh {
 
     async create() {
         try {
-            //await this.mesh.loadFromObjectFile("object/VideoShip.obj");
-            await this.mesh.loadFromObjectFile("object/mountains.obj");
+            await this.mesh.loadFromObjectFile("object/voiture.obj");
+            //await this.mesh.loadFromObjectFile("object/mountains.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -90,6 +110,13 @@ export class CubeMesh {
     }
 }
 
+
+let edge1 = new Vector3D();
+let edge2 = new Vector3D();
+let h = new Vector3D();
+let s = new Vector3D();
+let q = new Vector3D();
+
 export class Ray {
     constructor(origin, direction) {
         this.origin = origin;
@@ -101,28 +128,39 @@ export class Ray {
         let vertex0 = triangle.pos[0];
         let vertex1 = triangle.pos[1];
         let vertex2 = triangle.pos[2];
-        let edge1 = Vector3D.substractVector(vertex1, vertex0);
-        let edge2 = Vector3D.substractVector(vertex2, vertex0);
-        let h = Vector3D.crossProduct(this.direction, edge2);
-        let a = Vector3D.dotProductVector(edge1, h);
+        Vector3D.sub(vertex1, vertex0, edge1);
+        Vector3D.sub(vertex2, vertex0, edge2);
+        Vector3D.crossProduct(this.direction, edge2, h);
+        let a = Vector3D.dotProduct(edge1, h);
         if (a > -Number.EPSILON && a<Number.EPSILON){
             return false;
         }
         let f = 1/a;
-        let s = Vector3D.substractVector(this.origin, vertex0);
-        let u = f* Vector3D.dotProductVector(s,h);
+        Vector3D.sub(this.origin, vertex0, s);
+        let u = f* Vector3D.dotProduct(s,h);
         if (u<0 || u >1){
             return false;
         }
-        let q = Vector3D.crossProduct(s, edge1);
-        let v = f* Vector3D.dotProductVector(this.direction, q);
+        Vector3D.crossProduct(s, edge1, q);
+        let v = f* Vector3D.dotProduct(this.direction, q);
         if (v<0 || u+v>1){
             return false;
         }
-        let t = f* Vector3D.dotProductVector(edge2,q);
+        let t = f* Vector3D.dotProduct(edge2,q);
         return t > Number.EPSILON;
     }
 }
+
+const target = new Vector3D();
+const up = new Vector3D(0,1,0);
+const line1 = new Vector3D();
+const line2 = new Vector3D();
+const vCameraRay = new Vector3D();
+const lightDirection = new Vector3D(0, 0, -1);
+const multiply = new Vector3D();
+const rayOrigin = new Vector3D();
+const rayDirection = new Vector3D();
+
 
 function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
@@ -139,11 +177,11 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
     matWorld = Matrice.matriceMultiplyMatrix(rotationMatrixZ, rotationMatrixX);
     matWorld = Matrice.matriceMultiplyMatrix(matWorld, matTrans);
 
-    let up = new Vector3D(0,-1,0);
-    let target = new Vector3D(0,0,1);
+    up.set(0, -1, 0);
+    target.set(0,0,1);
     let cameraRot = rotation_y(engineState.yaw);
     updateLookDirection();
-    target = Vector3D.addVector3D(engineState.camera, engineState.lookDirection);
+    Vector3D.add(engineState.camera, engineState.lookDirection, target);
 
     let matCamera = Matrice.matriceAtPoint(engineState.camera,target,up);
     let matView = Matrice.matriceQuickInverse(matCamera);
@@ -154,25 +192,25 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
         triangle.pos[1] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[1]);
         triangle.pos[2] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[2]);
 
-        let line1 = Vector3D.substractVector(triangle.pos[1], triangle.pos[0]);
-        let line2 = Vector3D.substractVector(triangle.pos[2], triangle.pos[0]);
+        Vector3D.sub(triangle.pos[1], triangle.pos[0], line1);
+        Vector3D.sub(triangle.pos[2], triangle.pos[0], line2);
 
         let normal = Vector3D.crossProduct(line1,line2);
 
         normal.normalise()
 
-        let vCameraRay = Vector3D.substractVector(triangle.pos[0], engineState.camera);
+        Vector3D.sub(triangle.pos[0], engineState.camera, vCameraRay);
 
         // Product Dot pour vérifier si le triangle est bien visible
-        if (Vector3D.dotProductVector(normal, vCameraRay) < 0) {
+        if (Vector3D.dotProduct(normal, vCameraRay) < 0) {
 
             // Ajout d'un système de light
-            let light_direction = new Vector3D(0, 0, -1);
-            light_direction.normalise();
+            lightDirection.set(0, 0, -1);
+            lightDirection.normalise();
 
             let ambientLight = 0.2;
 
-            let dp = Math.max(0.1,Vector3D.dotProductVector(light_direction, normal));
+            let dp = Math.max(0.1,Vector3D.dotProduct(lightDirection, normal));
 
             triangle.pos[0] = Matrice.matriceMultiplyVector(matView, triangle.pos[0]);
             triangle.pos[1] = Matrice.matriceMultiplyVector(matView, triangle.pos[1]);
@@ -191,9 +229,9 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                     Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[2])
                 );
 
-                projected_triangle.pos[0] = Vector3D.divideVector(projected_triangle.pos[0], projected_triangle.pos[0].w);
-                projected_triangle.pos[1] = Vector3D.divideVector(projected_triangle.pos[1], projected_triangle.pos[1].w);
-                projected_triangle.pos[2] = Vector3D.divideVector(projected_triangle.pos[2], projected_triangle.pos[2].w);
+                projected_triangle.pos[0].divide(projected_triangle.pos[0].w);
+                projected_triangle.pos[1].divide(projected_triangle.pos[1].w);
+                projected_triangle.pos[2].divide(projected_triangle.pos[2].w);
 
                 if(engineState.shadowsEnabled){
                     const samplePoints = [
@@ -204,8 +242,10 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                     let shadowCount = 0;
 
                     for (let point of samplePoints) {
-                        const rayOrigin = Vector3D.addVector3D(point, Vector3D.multiplyVector(light_direction, 0.1));
-                        const rayDirection = Vector3D.multiplyVector(light_direction, 1);
+                        Vector3D.multiply(lightDirection, 0.1, multiply);
+                        Vector3D.add(point, multiply, rayOrigin);
+                        
+                        Vector3D.multiply(lightDirection, 1, rayDirection);
 
                         const shadowRay = new Ray(rayOrigin, rayDirection);
 
@@ -242,9 +282,9 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
                 let offset = new Vector3D(0, 0, 0);
 
-                projected_triangle.pos[0] = Vector3D.addVector3D(projected_triangle.pos[0], offset);
-                projected_triangle.pos[1] = Vector3D.addVector3D(projected_triangle.pos[1], offset);
-                projected_triangle.pos[2] = Vector3D.addVector3D(projected_triangle.pos[2], offset);
+                Vector3D.add(projected_triangle.pos[0], offset, projected_triangle.pos[0]);
+                Vector3D.add(projected_triangle.pos[1], offset, projected_triangle.pos[1]);
+                Vector3D.add(projected_triangle.pos[2], offset, projected_triangle.pos[2]);
 
                 // Scale into view
                 projected_triangle.pos[0].x += 1.0;

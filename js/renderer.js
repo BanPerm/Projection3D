@@ -12,6 +12,9 @@ export function sortTriangles(ctx, trianglesToRender, width, height) {
 }
 
 
+const clipVector1 = new Vector3D();
+const clipVector2 = new Vector3D();
+
 function drawTriangles(ctx, trianglesToRender, width, height) {
     for(let projected_triangle of engineState.triangleToShow) {
         let listTriangles = [];
@@ -31,16 +34,24 @@ function drawTriangles(ctx, trianglesToRender, width, height) {
                 let clipped = [new Triangle(), new Triangle()];
                 switch (p) {
                     case 0: // Top
-                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D(0, 0, 0), new Vector3D(0, 1, 0), test, clipped[0], clipped[1]);
+                        clipVector1.set(0, 0, 0);
+                        clipVector2.set(0, 1, 0);
+                        nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
                     case 1: // Bottom
-                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D(0, (height-50)-1, 0), new Vector3D(0, -1, 0), test, clipped[0], clipped[1]);
+                        clipVector1.set(0, (height-50)-1, 0);
+                        clipVector2.set(0, -1, 0);
+                        nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
                     case 2: // Left
-                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D(0, 0, 0), new Vector3D(1, 0, 0), test, clipped[0], clipped[1]);
+                        clipVector1.set(0, 0, 0);
+                        clipVector2.set(1, 0, 0);
+                        nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
                     case 3: // Right
-                        nTrisToAdd = Vector3D.clipAgainstPlane(new Vector3D((width-50)-1, 0, 0), new Vector3D(-1, 0, 0), test, clipped[0], clipped[1]);
+                        clipVector1.set((width-50)-1, 0, 0);
+                        clipVector2.set(-1, 0, 0);
+                        nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
                 }
 
