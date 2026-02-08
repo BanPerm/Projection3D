@@ -11,6 +11,22 @@ export class Triangle {
         this.color = 'white';
     }
 
+    //Systeme de pooling
+
+    static pool = [];
+    static poolIndex = 0;
+
+    static getFromPool() {
+        if (this.poolIndex >= this.pool.length) {
+            this.pool.push(new Triangle());
+        }
+        return this.pool[this.poolIndex++];
+    }
+
+    static resetPool() {
+        this.poolIndex = 0;
+    }
+
     //Outil pour la mémoire
     copy(triangle) {
         this.pos[0].copy(triangle.pos[0]);
@@ -76,8 +92,8 @@ export class CubeMesh {
 
     async create() {
         try {
-            //await this.mesh.loadFromObjectFile("object/voiture.obj");
-            await this.mesh.loadFromObjectFile("object/mountains.obj");
+            await this.mesh.loadFromObjectFile("object/axis.obj");
+            //await this.mesh.loadFromObjectFile("object/mountains.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -199,10 +215,11 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
     Matrice.matriceMakeTranslation(0, 0, 10, matTrans);
     Matrice.matriceMakeProjection(PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj);
 
+
     Matrice.matriceMultiplyMatrix(matRotX, matRotY, matTemp);
     Matrice.matriceMultiplyMatrix(matTemp, matRotZ, matWorld);
     Matrice.matriceMultiplyMatrix(matWorld, matTrans, matWorld);
-
+    
     // Caméra
     vUp.set(0, -1, 0);
     vTarget.set(0, 0, 1);

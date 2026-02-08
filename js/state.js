@@ -28,6 +28,7 @@ export let PROJECTION = {
 };
 
 export function updateDimensions(w, h) {
+    const scale = 0.5;
     PROJECTION.width = w - 50;
     PROJECTION.height = h - 50;
     PROJECTION.aspectRatio = PROJECTION.height / PROJECTION.width;
