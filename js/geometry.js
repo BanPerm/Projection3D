@@ -76,8 +76,8 @@ export class CubeMesh {
 
     async create() {
         try {
-            await this.mesh.loadFromObjectFile("object/voiture.obj");
-            //await this.mesh.loadFromObjectFile("object/mountains.obj");
+            //await this.mesh.loadFromObjectFile("object/voiture.obj");
+            await this.mesh.loadFromObjectFile("object/mountains.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -151,6 +151,34 @@ export class Ray {
     }
 }
 
+// Matrices de travail
+const matRotX = Matrice.create();
+const matRotY = Matrice.create();
+const matRotZ = Matrice.create();
+const matTrans = Matrice.create();
+const matWorld = Matrice.create();
+const matTemp = Matrice.create();
+const matProj = Matrice.create();
+const matCamera = Matrice.create();
+const matView = Matrice.create();
+
+// Triangles de travail
+const triTransformed = new Triangle();
+const triViewed = new Triangle(); 
+const clippedPool = [new Triangle(), new Triangle()];
+
+// Vecteurs de travail
+const vUp = new Vector3D(0, -1, 0);
+const vTarget = new Vector3D(0, 0, 1);
+const vLightDir = new Vector3D(0, 0, -1);
+const vNormal = new Vector3D();
+const vLine1 = new Vector3D();
+const vLine2 = new Vector3D();
+const vCameraRay = new Vector3D();
+const vNearPlanePoint = new Vector3D(0, 0, 0.1);
+const vNearPlaneNormal = new Vector3D(0, 0, 1);
+
+/*
 const target = new Vector3D();
 const up = new Vector3D(0,1,0);
 const line1 = new Vector3D();
@@ -160,181 +188,97 @@ const lightDirection = new Vector3D(0, 0, -1);
 const multiply = new Vector3D();
 const rayOrigin = new Vector3D();
 const rayDirection = new Vector3D();
-
+*/
 
 function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
     // Pré-calculer les matrices de rotation
-    const rotationMatrixX = rotation_x(angleX);
-    const rotationMatrixY = rotation_y(angleY);
-    const rotationMatrixZ = rotation_z(angleZ);
-    const projectionMatrix = Matrice.matriceMakeProjection(PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar);
+    Matrice.matriceMakeRotationX(angleX, matRotX);
+    Matrice.matriceMakeRotationY(angleY, matRotY);
+    Matrice.matriceMakeRotationZ(angleZ, matRotZ);
+    Matrice.matriceMakeTranslation(0, 0, 10, matTrans);
+    Matrice.matriceMakeProjection(PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj);
 
+    Matrice.matriceMultiplyMatrix(matRotX, matRotY, matTemp);
+    Matrice.matriceMultiplyMatrix(matTemp, matRotZ, matWorld);
+    Matrice.matriceMultiplyMatrix(matWorld, matTrans, matWorld);
 
-    const matTrans = Matrice.matriceMakeTranslation(0,0,10);
-
-    let matWorld;
-    matWorld = Matrice.matriceMultiplyMatrix(rotationMatrixZ, rotationMatrixX);
-    matWorld = Matrice.matriceMultiplyMatrix(matWorld, matTrans);
-
-    up.set(0, -1, 0);
-    target.set(0,0,1);
-    let cameraRot = rotation_y(engineState.yaw);
+    // Caméra
+    vUp.set(0, -1, 0);
+    vTarget.set(0, 0, 1);
     updateLookDirection();
-    Vector3D.add(engineState.camera, engineState.lookDirection, target);
+    Vector3D.add(engineState.camera, engineState.lookDirection, vTarget);
 
-    let matCamera = Matrice.matriceAtPoint(engineState.camera,target,up);
-    let matView = Matrice.matriceQuickInverse(matCamera);
+    Matrice.matriceAtPoint(engineState.camera, vTarget, vUp, matCamera);
+    Matrice.matriceQuickInverse(matCamera, matView);
 
-    for (let triangle of triangles) {
-        // Rotation
-        triangle.pos[0] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[0]);
-        triangle.pos[1] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[1]);
-        triangle.pos[2] = Matrice.matriceMultiplyVector(matWorld, triangle.pos[2]);
+    for (let i = 0; i < triangles.length; i++) {
+        const tri = triangles[i];
 
-        Vector3D.sub(triangle.pos[1], triangle.pos[0], line1);
-        Vector3D.sub(triangle.pos[2], triangle.pos[0], line2);
+        // Transformation World
+        Matrice.matriceMultiplyVector(matWorld, tri.pos[0], triTransformed.pos[0]);
+        Matrice.matriceMultiplyVector(matWorld, tri.pos[1], triTransformed.pos[1]);
+        Matrice.matriceMultiplyVector(matWorld, tri.pos[2], triTransformed.pos[2]);
 
-        let normal = Vector3D.crossProduct(line1,line2);
+        // Calcul de la normale pour le Culling
+        Vector3D.sub(triTransformed.pos[1], triTransformed.pos[0], vLine1);
+        Vector3D.sub(triTransformed.pos[2], triTransformed.pos[0], vLine2);
+        Vector3D.crossProduct(vLine1, vLine2, vNormal);
+        vNormal.normalise();
 
-        normal.normalise()
-
-        Vector3D.sub(triangle.pos[0], engineState.camera, vCameraRay);
+        Vector3D.sub(triTransformed.pos[0], engineState.camera, vCameraRay);
 
         // Product Dot pour vérifier si le triangle est bien visible
-        if (Vector3D.dotProduct(normal, vCameraRay) < 0) {
+        if (Vector3D.dotProduct(vNormal, vCameraRay) < 0) {
 
-            // Ajout d'un système de light
-            lightDirection.set(0, 0, -1);
-            lightDirection.normalise();
+            // Illumination
+            vLightDir.set(0, 0, -1);
+            vLightDir.normalise();
+            const dp = Math.max(0.1, Vector3D.dotProduct(vLightDir, vNormal));
 
-            let ambientLight = 0.2;
+            // Transformation View (Caméra)
+            Matrice.matriceMultiplyVector(matView, triTransformed.pos[0], triViewed.pos[0]);
+            Matrice.matriceMultiplyVector(matView, triTransformed.pos[1], triViewed.pos[1]);
+            Matrice.matriceMultiplyVector(matView, triTransformed.pos[2], triViewed.pos[2]);
+            triViewed.color = (tri.color === 'white') ? getColour(dp) : tri.color;
 
-            let dp = Math.max(0.1,Vector3D.dotProduct(lightDirection, normal));
 
-            triangle.pos[0] = Matrice.matriceMultiplyVector(matView, triangle.pos[0]);
-            triangle.pos[1] = Matrice.matriceMultiplyVector(matView, triangle.pos[1]);
-            triangle.pos[2] = Matrice.matriceMultiplyVector(matView, triangle.pos[2]);
+            // Clipping contre le plan Z-Near
+            const nClippedTriangles = Vector3D.clipAgainstPlane(
+                vNearPlanePoint, 
+                vNearPlaneNormal, 
+                triViewed, 
+                clippedPool[0], 
+                clippedPool[1]
+            );
 
-            let clippedTriangles = 0;
-            let clipped = [new Triangle(), new Triangle()];
-            clippedTriangles = Vector3D.clipAgainstPlane(new Vector3D(0,0,0.1), new Vector3D(0,0,1), triangle, clipped[0], clipped[1]);
+            for (let n = 0; n < nClippedTriangles; n++){
+                const clippedTri = clippedPool[n];
 
-            for (let n = 0; n < clippedTriangles; n++)
-            {
-                // Projection 3D -> 2D
-                let projected_triangle = new Triangle(
-                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[0]),
-                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[1]),
-                    Matrice.matriceMultiplyVector(projectionMatrix, clipped[n].pos[2])
-                );
+                let projectedTri = new Triangle(new Vector3D(), new Vector3D(), new Vector3D());
+                projectedTri.color = clippedTri.color;
 
-                projected_triangle.pos[0].divide(projected_triangle.pos[0].w);
-                projected_triangle.pos[1].divide(projected_triangle.pos[1].w);
-                projected_triangle.pos[2].divide(projected_triangle.pos[2].w);
+                // Projection
+                Matrice.matriceMultiplyVector(matProj, clippedTri.pos[0], projectedTri.pos[0]);
+                Matrice.matriceMultiplyVector(matProj, clippedTri.pos[1], projectedTri.pos[1]);
+                Matrice.matriceMultiplyVector(matProj, clippedTri.pos[2], projectedTri.pos[2]);
 
-                if(engineState.shadowsEnabled){
-                    const samplePoints = [
-                        projected_triangle.pos[0],
-                        projected_triangle.pos[1],
-                        projected_triangle.pos[2]
-                    ];
-                    let shadowCount = 0;
-
-                    for (let point of samplePoints) {
-                        Vector3D.multiply(lightDirection, 0.1, multiply);
-                        Vector3D.add(point, multiply, rayOrigin);
-                        
-                        Vector3D.multiply(lightDirection, 1, rayDirection);
-
-                        const shadowRay = new Ray(rayOrigin, rayDirection);
-
-                        let inShadow = false;
-                        for (let otherTriangle of triangles) {
-                            if (otherTriangle === triangle) continue;
-
-                            if (shadowRay.intersectTriangle(otherTriangle)) {
-                                inShadow = true;
-                                break;
-                            }
-                        }
-
-                        if (inShadow) {
-                            shadowCount++;
-                        }
-                    }
-
-                    const totalSamples = samplePoints.length;
-                    const shadowIntensity = (totalSamples - shadowCount) / totalSamples;
-                    let finalIntensity = ambientLight + (1 - ambientLight) * dp * shadowIntensity;
-                    let grey = Math.floor(255 * finalIntensity);
-                    projected_triangle.color = `rgb(${grey}, ${grey}, ${grey})`;
-                }
-                else{
-                    if(clipped[n].color!=='white'){
-                        projected_triangle.color = clipped[n].color;
-                    }
-                    else{
-                        projected_triangle.color = getColour(dp);
-                    }
+                // Division perspective et Scale
+                for (let p = 0; p < 3; p++) {
+                    const v = projectedTri.pos[p];
+                    v.divide(v.w);
+                    
+                    // Scale into view
+                    v.x = (v.x + 1.0) * 0.5 * PROJECTION.width;
+                    v.y = (v.y + 1.0) * 0.5 * PROJECTION.height;
                 }
 
-
-                let offset = new Vector3D(0, 0, 0);
-
-                Vector3D.add(projected_triangle.pos[0], offset, projected_triangle.pos[0]);
-                Vector3D.add(projected_triangle.pos[1], offset, projected_triangle.pos[1]);
-                Vector3D.add(projected_triangle.pos[2], offset, projected_triangle.pos[2]);
-
-                // Scale into view
-                projected_triangle.pos[0].x += 1.0;
-                projected_triangle.pos[0].y += 1.0;
-                projected_triangle.pos[1].x += 1.0;
-                projected_triangle.pos[1].y += 1.0;
-                projected_triangle.pos[2].x += 1.0;
-                projected_triangle.pos[2].y += 1.0;
-
-                projected_triangle.pos[0].x *= 0.5 * PROJECTION.width;
-                projected_triangle.pos[0].y *= 0.5 * PROJECTION.height;
-                projected_triangle.pos[1].x *= 0.5 * PROJECTION.width;
-                projected_triangle.pos[1].y *= 0.5 * PROJECTION.height;
-                projected_triangle.pos[2].x *= 0.5 * PROJECTION.width;
-                projected_triangle.pos[2].y *= 0.5 * PROJECTION.height;
-
-                engineState.triangleToShow.push(projected_triangle);
+                engineState.triangleToShow.push(projectedTri);
             }
         }
     }
 }
 
-
-// Matrice de rotation
-function rotation_x(angle) {
-    return [
-        [1, 0, 0, 0],
-        [0, Math.cos(angle), -Math.sin(angle), 0],
-        [0, Math.sin(angle), Math.cos(angle), 0],
-        [0, 0, 0, 1]
-    ];
-}
-
-function rotation_y(angle){
-    return [
-        [Math.cos(angle), 0, Math.sin(angle), 0],
-        [0, 1, 0, 0],
-        [-Math.sin(angle), 0, Math.cos(angle), 0],
-        [0, 0, 0, 1]
-    ];
-}
-
-function rotation_z(angle) {
-    return [
-        [Math.cos(angle), -Math.sin(angle), 0, 0],
-        [Math.sin(angle), Math.cos(angle), 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]
-    ];
-}
 
 function getColour(lum) {
     let grey = Math.floor(255 * lum);

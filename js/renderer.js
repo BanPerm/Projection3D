@@ -39,7 +39,7 @@ function drawTriangles(ctx, trianglesToRender, width, height) {
                         nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
                     case 1: // Bottom
-                        clipVector1.set(0, (height-50)-1, 0);
+                        clipVector1.set(0, height-1, 0);
                         clipVector2.set(0, -1, 0);
                         nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
@@ -49,7 +49,7 @@ function drawTriangles(ctx, trianglesToRender, width, height) {
                         nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;
                     case 3: // Right
-                        clipVector1.set((width-50)-1, 0, 0);
+                        clipVector1.set(width-1, 0, 0);
                         clipVector2.set(-1, 0, 0);
                         nTrisToAdd = Vector3D.clipAgainstPlane(clipVector1, clipVector2, test, clipped[0], clipped[1]);
                         break;

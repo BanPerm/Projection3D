@@ -95,7 +95,7 @@ function updateCamera(fElapsedTime) {
         speed = normalSpeed;
     }
 
-    upVector.set(0, -1, 0);
+    upVector.set(0, 1, 0);
 
     Vector3D.multiply(engineState.lookDirection, speed * fElapsedTime, forward);
     Vector3D.crossProduct(engineState.lookDirection, upVector, right);
