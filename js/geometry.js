@@ -51,7 +51,7 @@ export class CubeMesh {
 
     async create() {
         try {
-            //await this.mesh.loadFromObjectFile("object/teapot.obj");
+            //await this.mesh.loadFromObjectFile("object/voiture.obj");
             await this.mesh.loadFromObjectFile("object/mountains.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
@@ -245,7 +245,8 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                 rasterizeTriangle(
                     p0.x, p0.y, p0.z, 
                     p1.x, p1.y, p1.z, 
-                    p2.x, p2.y, p2.z, 
+                    p2.x, p2.y, p2.z,
+                    clippedTri.color,
                     dp
                 );
             }

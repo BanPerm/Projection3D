@@ -137,7 +137,7 @@ export class Vector3D {
 
     static clipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2) {
         const plane_dot = Vector3D.dotProduct(plane_n, plane_p);
-        
+
         let inside_points = [];
         let outside_points = [];
 
@@ -154,7 +154,8 @@ export class Vector3D {
         }
 
         if (inside_points.length === 1 && outside_points.length === 2) {
-            out_tri1.color = in_tri.color;
+            //out_tri1.color = in_tri.color;
+            out_tri1.color = 'blue';
             out_tri1.pos[0].copy(inside_points[0]);
             Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[0], out_tri1.pos[1]);
             Vector3D.intersectPlane(plane_p, plane_n, inside_points[0], outside_points[1], out_tri1.pos[2]);
@@ -162,8 +163,10 @@ export class Vector3D {
         }
 
         if (inside_points.length === 2 && outside_points.length === 1) {
-            out_tri1.color = in_tri.color;
-            out_tri2.color = in_tri.color;
+            //out_tri1.color = in_tri.color;
+            //out_tri2.color = in_tri.color;
+            out_tri1.color = 'yellow';
+            out_tri2.color = 'green';
 
             out_tri1.pos[0].copy(inside_points[0]);
             out_tri1.pos[1].copy(inside_points[1]);

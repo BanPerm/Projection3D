@@ -26,10 +26,31 @@ export function initRenderer(ctx, width, height) {
 let buffer1 = [];
 let buffer2 = [];
 
-function colorToInt(lum) {
-    const val = Math.floor(255 * lum);
-    // Format Little Endian : 0xAABBGGRR (Alpha, Blue, Green, Red)
-    return (255 << 24) | (val << 16) | (val << 8) | val;
+const DEBUG_COLORS = {
+    'blue':   { r: 0,   g: 0,   b: 255 },
+    'yellow': { r: 255, g: 255, b: 0   },
+    'green':  { r: 0,   g: 255, b: 0   },
+    'white':  { r: 255, g: 255, b: 255 },
+    'red':    { r: 255, g: 0,   b: 0   }
+};
+
+function colorToInt(colorInput, lum = 1.0) {
+    let r, g, b;
+
+    if (typeof colorInput === 'string' && DEBUG_COLORS[colorInput]) {
+        ({ r, g, b } = DEBUG_COLORS[colorInput]);
+    } 
+    else if (typeof colorInput === 'number') {
+        const val = Math.floor(255 * colorInput);
+        r = g = b = val;
+    } 
+    else {
+        const val = Math.floor(255 * lum);
+        r = g = b = val;
+    }
+
+    // Format Little Endian pour Uint32Array : 0xAABBGGRR
+    return (255 << 24) | (b << 16) | (g << 8) | r;
 }
 
 export function clearBuffers() {
@@ -41,11 +62,24 @@ export function drawBufferToCanvas(ctx) {
     ctx.putImageData(RENDER_BUFFER.imageData, 0, 0);
 }
 
-export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorLum) {
+
+const CULLING_SENS = 1;
+
+export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData, lum = 1.0) {
+    if (isNaN(x1) || isNaN(x2) || isNaN(x3) || isNaN(y1) || isNaN(y2) || isNaN(y3)) return;
+
     const width = RENDER_BUFFER.width;
     const height = RENDER_BUFFER.height;
     const pixels = RENDER_BUFFER.pixelBuffer;
     const depth = RENDER_BUFFER.zBuffer;
+
+    // Pré-calculs pour les coordonnées barycentriques (aire du triangle)
+    const area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+
+    if (Math.abs(area) < 0.0001) return;
+
+    // Si le triangle est orienté dans le mauvais sens, on peut l'ignorer (back-face culling)
+    //if (area * CULLING_SENS > 0) return;
 
     // 1. Bounding Box : On ne scanne que le rectangle autour du triangle
     let minX = Math.floor(Math.min(x1, x2, x3));
@@ -59,15 +93,14 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorLum) 
     maxX = Math.min(width - 1, maxX);
     maxY = Math.min(height - 1, maxY);
 
-    // Pré-calculs pour les coordonnées barycentriques (aire du triangle)
-    const area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
-
-    if (area >= 0) return;
+    if (minX > maxX || minY > maxY) return;
 
     const invArea = 1.0 / area;
-    const colorInt = colorToInt(colorLum);
+    const colorInt = colorToInt(colorData, lum);
 
     for(let y = minY; y <= maxY; y++) {
+        let index = y * width + minX;
+        
         for(let x = minX; x <= maxX; x++) {
             // 2. Coordonées barycentriques : On calcule les coordonnées barycentriques du point (x, y) par rapport au triangle
             const w1 = ((x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)) * invArea;
@@ -86,6 +119,7 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorLum) 
                     pixels[index] = colorInt;
                 }
             }
+            index ++
         }
     }
 }
