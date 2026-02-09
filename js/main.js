@@ -116,23 +116,31 @@ function animate() {
     drawBufferToCanvas(ctx);
 
     // Calcul des FPS
-    frameCount++;
-    displayFPS(currentTime);
+    displayFPS();
 
     requestAnimationFrame(animate);
 }
 
-function displayFPS(currentTime) {
-    if (currentTime > lastTimeFPS + 1000) {
-        fps = Math.round((frameCount * 1000) / (currentTime - lastTimeFPS));
-        frameCount = 0;
-        lastTimeFPS = currentTime;
+
+let frameTimes = [];
+const maxFrameHistory = 60;
+
+function displayFPS() {
+    const currentTime = performance.now();
+    const dt = currentTime - lastTime;
+    
+    frameTimes.push(dt);
+    
+    if (frameTimes.length > maxFrameHistory) {
+        frameTimes.shift();
     }
 
-    ctx.fillStyle = 'white';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'right';
-    ctx.fillText(`FPS: ${fps}`, PROJECTION.width - 10, 20);
+    const averageStep = frameTimes.reduce((a, b) => a + b) / frameTimes.length;
+    const fps = Math.round(1000 / averageStep);
+
+    ctx.fillStyle = "white";
+    ctx.font = "16px Monospace";
+    ctx.fillText(`FPS: ${fps} (${averageStep.toFixed(2)}ms)`, 10, 20);
 }
 
 
