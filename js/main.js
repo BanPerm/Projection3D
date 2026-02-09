@@ -2,34 +2,22 @@
 // python -m http.server 8000
 import { CubeMesh } from './geometry.js';
 import {Vector3D} from './math.js';
-import { sortTriangles } from './renderer.js';
+import { clearBuffers, drawBufferToCanvas, initRenderer } from './renderer.js';
 import { clearTriangles, engineState, initialisationCamera, PROJECTION, updateDimensions } from './state.js';
 
 
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+// @ts-ignore
+const ctx = canvas.getContext('2d', { alpha: false });
 
 // Initialisation de la fenêtre
 updateDimensions(window.innerWidth, window.innerHeight);
+// @ts-ignore
 canvas.width = PROJECTION.width;
+// @ts-ignore
 canvas.height = PROJECTION.height;
 
-// function drawTriangles() {
-//     for(let projected_triangle of triangleToShow) {
-//         ctx.beginPath();
-//         ctx.moveTo(projected_triangle.pos[0].x, projected_triangle.pos[0].y);
-//         ctx.lineTo(projected_triangle.pos[1].x, projected_triangle.pos[1].y);
-//         ctx.lineTo(projected_triangle.pos[2].x, projected_triangle.pos[2].y);
-//         ctx.closePath();
-//
-//         ctx.fillStyle = projected_triangle.color;
-//         ctx.strokeStyle = projected_triangle.color;
-//         ctx.fill();
-//         ctx.stroke();
-//     }
-// }
-
-
+initRenderer(ctx, PROJECTION.width, PROJECTION.height);
 initialisationCamera(new Vector3D(), new Vector3D());
 
 // FPS variables
@@ -38,8 +26,8 @@ let lastTime = performance.now();
 let lastTimeFPS = performance.now();
 let fps = 0;
 
-let normalSpeed = 16;
-let boostedSpeed = 64;
+const normalSpeed = 16;
+const boostedSpeed = 64;
 let speed = normalSpeed;
 let keys = {};
 
@@ -66,12 +54,14 @@ function handleMouseMove(event) {
 }
 
 canvas.addEventListener('click', () => {
+    // @ts-ignore
     canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
     canvas.requestPointerLock();
 });
 
 // Écouter les événements de changement d'état du verrouillage du curseur
 document.addEventListener('pointerlockchange', () => {
+    // @ts-ignore
     isPointerLocked = (document.pointerLockElement === canvas || document.mozPointerLockElement === canvas);
 });
 
@@ -89,11 +79,8 @@ window.addEventListener('keyup', function(e) {
 });
 
 function updateCamera(fElapsedTime) {
-    if (keys['shift']) {
-        speed = boostedSpeed;
-    } else {
-        speed = normalSpeed;
-    }
+    if (keys['shift']) speed = boostedSpeed;
+    else speed = normalSpeed;
 
     upVector.set(0, 1, 0);
 
@@ -102,28 +89,14 @@ function updateCamera(fElapsedTime) {
     right.normalise();
 
     // Mouvement vertical
-    if (keys[' ']) {
-        engineState.camera.y += speed * fElapsedTime; // Déplace vers le haut
-    }
-    if (keys['control']) {
-        engineState.camera.y -= speed * fElapsedTime; // Déplace vers le bas
-    }
-
+    if (keys[' ']) {engineState.camera.y += speed * fElapsedTime;}
+    if (keys['control']) {engineState.camera.y -= speed * fElapsedTime;}
     // Mouvement avant/arrière
-    if (keys['z']) {
-        Vector3D.add(engineState.camera, forward, engineState.camera);
-    }
-    if (keys['s']) {
-        Vector3D.sub(engineState.camera, forward, engineState.camera);
-    }
-
+    if (keys['z']) {Vector3D.add(engineState.camera, forward, engineState.camera);}
+    if (keys['s']) {Vector3D.sub(engineState.camera, forward, engineState.camera);}
     // Mouvement gauche/droite
-    if (keys['d']) {
-        Vector3D.add(engineState.camera, right.multiply(speed * fElapsedTime), engineState.camera);
-    }
-    if (keys['q']) {
-        Vector3D.add(engineState.camera, right.multiply(-speed * fElapsedTime), engineState.camera);
-    }
+    if (keys['d']) {Vector3D.add(engineState.camera, right.multiply(speed * fElapsedTime), engineState.camera);}
+    if (keys['q']) {Vector3D.add(engineState.camera, right.multiply(-speed * fElapsedTime), engineState.camera);}
 
 }
 
@@ -132,30 +105,42 @@ function animate() {
     const currentTime = performance.now();
     const deltaTime = (currentTime - lastTime) / 1000;
     lastTime = currentTime;
-    ctx.clearRect(0, 0, PROJECTION.width, PROJECTION.height);
-    clearTriangles();
 
-    mesh.draw(0,0, 0);
+    clearBuffers();
+    clearTriangles();
 
     updateCamera(deltaTime);
 
-    sortTriangles(ctx, engineState.triangleToShow, PROJECTION.width, PROJECTION.height);
+    mesh.draw(0,0,0);
+
+    drawBufferToCanvas(ctx);
 
     // Calcul des FPS
-    frameCount++;
-    if (currentTime > lastTimeFPS + 1000) {
-        fps = Math.round((frameCount * 1000) / (currentTime - lastTimeFPS));
-        frameCount = 0;
-        lastTimeFPS = currentTime;
-    }
-
-    // Affichage des FPS en haut à droite du canvas
-    ctx.fillStyle = 'white';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'right';
-    ctx.fillText(`FPS: ${fps}`, PROJECTION.width - 10, 20);
+    displayFPS();
 
     requestAnimationFrame(animate);
+}
+
+
+let frameTimes = [];
+const maxFrameHistory = 60;
+
+function displayFPS() {
+    const currentTime = performance.now();
+    const dt = currentTime - lastTime;
+    
+    frameTimes.push(dt);
+    
+    if (frameTimes.length > maxFrameHistory) {
+        frameTimes.shift();
+    }
+
+    const averageStep = frameTimes.reduce((a, b) => a + b) / frameTimes.length;
+    const fps = Math.round(1000 / averageStep);
+
+    ctx.fillStyle = "white";
+    ctx.font = "16px Monospace";
+    ctx.fillText(`FPS: ${fps} (${averageStep.toFixed(2)}ms)`, 10, 20);
 }
 
 
