@@ -46,6 +46,10 @@ let keys = {};
 let sensitivity = 0.01;
 let isPointerLocked = false;
 
+let forward = new Vector3D();
+let right = new Vector3D();
+let upVector = new Vector3D(0, 1, 0);
+
 function handleMouseMove(event) {
     if (isPointerLocked) {
         const deltaX = event.movementX || event.mozMovementX || 0;
@@ -91,9 +95,10 @@ function updateCamera(fElapsedTime) {
         speed = normalSpeed;
     }
 
-    let upVector = new Vector3D(0, 1, 0);
-    let forward = Vector3D.multiplyVector(engineState.lookDirection, speed * fElapsedTime);
-    let right = Vector3D.crossProduct(engineState.lookDirection, upVector);
+    upVector.set(0, 1, 0);
+
+    Vector3D.multiply(engineState.lookDirection, speed * fElapsedTime, forward);
+    Vector3D.crossProduct(engineState.lookDirection, upVector, right);
     right.normalise();
 
     // Mouvement vertical
@@ -106,18 +111,18 @@ function updateCamera(fElapsedTime) {
 
     // Mouvement avant/arrière
     if (keys['z']) {
-        engineState.camera = Vector3D.addVector3D(engineState.camera, forward);
+        Vector3D.add(engineState.camera, forward, engineState.camera);
     }
     if (keys['s']) {
-        engineState.camera = Vector3D.substractVector(engineState.camera, forward);
+        Vector3D.sub(engineState.camera, forward, engineState.camera);
     }
 
     // Mouvement gauche/droite
     if (keys['d']) {
-        engineState.camera = Vector3D.addVector3D(engineState.camera, right.scale(speed * fElapsedTime));
+        Vector3D.add(engineState.camera, right.multiply(speed * fElapsedTime), engineState.camera);
     }
     if (keys['q']) {
-        engineState.camera = Vector3D.addVector3D(engineState.camera, right.scale(-speed * fElapsedTime));
+        Vector3D.add(engineState.camera, right.multiply(-speed * fElapsedTime), engineState.camera);
     }
 
 }
@@ -158,41 +163,3 @@ const mesh = new CubeMesh();
 mesh.create().then(() => {
     animate();
 });
-
-//!!!!!!!! Marche pas (voir à implémenter plus tard) !!!!!!!!\\
-
-// const multiplyMatrixVector = gpu.createKernel(function(matrice, vector) {
-//     const x = vector[0] * matrice[0][0] + vector[1] * matrice[1][0] + vector[2] * matrice[2][0] + matrice[3][0];
-//     const y = vector[0] * matrice[0][1] + vector[1] * matrice[1][1] + vector[2] * matrice[2][1] + matrice[3][1];
-//     const z = vector[0] * matrice[0][2] + vector[1] * matrice[1][2] + vector[2] * matrice[2][2] + matrice[3][2];
-//     const w = vector[0] * matrice[0][3] + vector[1] * matrice[1][3] + vector[2] * matrice[2][3] + matrice[3][3];
-//
-//     if (w !== 0.0) {
-//         return [x / w, y / w, z / w];
-//     } else {
-//         return [x, y, z];
-//     }
-// }, {
-//     dynamicArguments: true
-
-// }).setOutput([3]);
-//
-// function multiplication(matrice, vector) {
-//     const result = multiplyMatrixVector(matrice, vector.toArray());
-//     return Vector3D.fromArray(result);
-// }
-
-function multiplication(matrice, vector) {
-    let x = vector.x * matrice[0][0] + vector.y * matrice[1][0] + vector.z * matrice[2][0] + matrice[3][0];
-    let y = vector.x * matrice[0][1] + vector.y * matrice[1][1] + vector.z * matrice[2][1] + matrice[3][1];
-    let z = vector.x * matrice[0][2] + vector.y * matrice[1][2] + vector.z * matrice[2][2] + matrice[3][2];
-    let w = vector.x * matrice[0][3] + vector.y * matrice[1][3] + vector.z * matrice[2][3] + matrice[3][3];
-
-    if (w !== 0.0) {
-        x /= w;
-        y /= w;
-        z /= w;
-    }
-
-    return new Vector3D(x, y, z);
-}
