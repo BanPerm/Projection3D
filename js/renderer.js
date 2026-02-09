@@ -1,22 +1,93 @@
-import { Triangle } from './geometry.js';
 import {Vector3D} from './math.js';
 import { engineState } from './state.js';
+import { Triangle } from './triangle.js';
+
+export const RENDER_BUFFER = {
+    width: 0,
+    height: 0,
+    imageData: null,
+    pixelBuffer: null, // Uint32Array (Rapide)
+    zBuffer: null      // Float32Array (Profondeur)
+};
+
+export function initRenderer(ctx, width, height) {
+    RENDER_BUFFER.width = width;
+    RENDER_BUFFER.height = height;
+    
+    // Création de l'image data
+    RENDER_BUFFER.imageData = ctx.createImageData(width, height);
+    
+    // Création des vues typées pour la vitesse
+    RENDER_BUFFER.pixelBuffer = new Uint32Array(RENDER_BUFFER.imageData.data.buffer);
+    RENDER_BUFFER.zBuffer = new Float32Array(width * height);
+}
 
 //Le but va d'être d'éviter de faire trop d'allocation à chaque frame, donc on va réutiliser des objets pour le clipping et le tri des triangles
 let buffer1 = [];
 let buffer2 = [];
 
-const triangleSorter = (t1, t2) => {
-    const z1 = t1.pos[0].z + t1.pos[1].z + t1.pos[2].z;
-    const z2 = t2.pos[0].z + t2.pos[1].z + t2.pos[2].z;
-    return z2 - z1;
-};
+function colorToInt(lum) {
+    const val = Math.floor(255 * lum);
+    // Format Little Endian : 0xAABBGGRR (Alpha, Blue, Green, Red)
+    return (255 << 24) | (val << 16) | (val << 8) | val;
+}
 
-export function sortTriangles(ctx, trianglesToRender, width, height) {
-    engineState.triangleToShow.sort(triangleSorter);
+export function clearBuffers() {
+    RENDER_BUFFER.pixelBuffer.fill(0xFF000000); // Remplit le buffer avec du noir opaque
+    RENDER_BUFFER.zBuffer.fill(Infinity); // Remplit le z-buffer avec des valeurs infinies
+}
 
-    Triangle.resetPool();
-    drawTriangles(ctx, trianglesToRender, width, height);
+export function drawBufferToCanvas(ctx) {
+    ctx.putImageData(RENDER_BUFFER.imageData, 0, 0);
+}
+
+export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorLum) {
+    const width = RENDER_BUFFER.width;
+    const height = RENDER_BUFFER.height;
+    const pixels = RENDER_BUFFER.pixelBuffer;
+    const depth = RENDER_BUFFER.zBuffer;
+
+    // 1. Bounding Box : On ne scanne que le rectangle autour du triangle
+    let minX = Math.floor(Math.min(x1, x2, x3));
+    let maxX = Math.ceil(Math.max(x1, x2, x3));
+    let minY = Math.floor(Math.min(y1, y2, y3));
+    let maxY = Math.ceil(Math.max(y1, y2, y3));
+
+    // Clipping de la Bounding Box (ne pas dessiner hors écran)
+    minX = Math.max(0, minX);
+    minY = Math.max(0, minY);
+    maxX = Math.min(width - 1, maxX);
+    maxY = Math.min(height - 1, maxY);
+
+    // Pré-calculs pour les coordonnées barycentriques (aire du triangle)
+    const area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+
+    if (area >= 0) return;
+
+    const invArea = 1.0 / area;
+    const colorInt = colorToInt(colorLum);
+
+    for(let y = minY; y <= maxY; y++) {
+        for(let x = minX; x <= maxX; x++) {
+            // 2. Coordonées barycentriques : On calcule les coordonnées barycentriques du point (x, y) par rapport au triangle
+            const w1 = ((x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)) * invArea;
+            const w2 = ((x3 - x2) * (y - y2) - (y3 - y2) * (x - x2)) * invArea;
+            const w3 = 1 - w1 - w2;
+
+            // 3. Test d'appartenance : Si les coordonnées barycentriques sont toutes positives, le point est à l'intérieur du triangle
+            if (w1 >= 0 && w2 >= 0 && w3 >= 0) {
+                // 4. Interpolation de la profondeur : On calcule la profondeur du point (x, y) en interpolant les profondeurs des sommets du triangle
+                const z = w1 * z1 + w2 * z2 + w3 * z3;
+
+                // 5. Test de profondeur : Si la profondeur calculée est inférieure à celle stockée dans le z-buffer, on met à jour le pixel et le z-buffer
+                const index = y * width + x;
+                if (z < depth[index]) {
+                    depth[index] = z;
+                    pixels[index] = colorInt;
+                }
+            }
+        }
+    }
 }
 
 
@@ -79,16 +150,4 @@ function drawTriangles(ctx, trianglesToRender, width, height) {
             ctx.fill();
         }
     }
-}
-
-function fillTriangle(ctx, triangle) {
-    ctx.beginPath();
-    ctx.moveTo(triangle.pos[0].x, triangle.pos[0].y);
-    ctx.lineTo(triangle.pos[1].x, triangle.pos[1].y);
-    ctx.lineTo(triangle.pos[2].x, triangle.pos[2].y);
-    ctx.closePath();
-    ctx.fillStyle = triangle.color;
-    ctx.fill();
-    ctx.strokeStyle = triangle.color;
-    ctx.stroke();
 }

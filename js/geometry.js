@@ -1,48 +1,7 @@
 import { Matrice, Vector3D } from "./math.js";
+import {rasterizeTriangle} from "./renderer.js";
 import { CONFIG, engineState, PROJECTION } from "./state.js";
-
-export class Triangle {
-    constructor(p1, p2, p3) {
-        this.pos = [
-            p1 || new Vector3D(),
-            p2 || new Vector3D(),
-            p3 || new Vector3D()
-        ];
-        this.color = 'white';
-    }
-
-    //Systeme de pooling
-
-    static pool = [];
-    static poolIndex = 0;
-
-    static getFromPool() {
-        if (this.poolIndex >= this.pool.length) {
-            this.pool.push(new Triangle());
-        }
-        return this.pool[this.poolIndex++];
-    }
-
-    static resetPool() {
-        this.poolIndex = 0;
-    }
-
-    //Outil pour la mémoire
-    copy(triangle) {
-        this.pos[0].copy(triangle.pos[0]);
-        this.pos[1].copy(triangle.pos[1]);
-        this.pos[2].copy(triangle.pos[2]);
-        this.color = triangle.color;
-        return this;
-    }
-
-    set(p1, p2, p3) {
-        this.pos[0].copy(p1);
-        this.pos[1].copy(p2);
-        this.pos[2].copy(p3);
-        return this;
-    }
-}
+import { Triangle } from "./triangle.js";
 
 export class Mesh {
     constructor() {
@@ -92,8 +51,8 @@ export class CubeMesh {
 
     async create() {
         try {
-            await this.mesh.loadFromObjectFile("object/axis.obj");
-            //await this.mesh.loadFromObjectFile("object/mountains.obj");
+            //await this.mesh.loadFromObjectFile("object/teapot.obj");
+            await this.mesh.loadFromObjectFile("object/mountains.obj");
             this.initialMesh.pos = this.mesh.pos.map(tri =>
                 new Triangle(
                     new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
@@ -101,8 +60,6 @@ export class CubeMesh {
                     new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
                 )
             );
-
-            console.log(this.mesh.pos);
         } catch (error) {
             console.error('Failed to create mesh:', error);
         }
@@ -194,18 +151,6 @@ const vCameraRay = new Vector3D();
 const vNearPlanePoint = new Vector3D(0, 0, 0.1);
 const vNearPlaneNormal = new Vector3D(0, 0, 1);
 
-/*
-const target = new Vector3D();
-const up = new Vector3D(0,1,0);
-const line1 = new Vector3D();
-const line2 = new Vector3D();
-const vCameraRay = new Vector3D();
-const lightDirection = new Vector3D(0, 0, -1);
-const multiply = new Vector3D();
-const rayOrigin = new Vector3D();
-const rayDirection = new Vector3D();
-*/
-
 function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
     // Pré-calculer les matrices de rotation
@@ -283,14 +228,26 @@ function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                 // Division perspective et Scale
                 for (let p = 0; p < 3; p++) {
                     const v = projectedTri.pos[p];
-                    v.divide(v.w);
+
+                    if (Math.abs(v.w) > 0.0001) {
+                        v.divide(v.w);
+                    }
                     
                     // Scale into view
                     v.x = (v.x + 1.0) * 0.5 * PROJECTION.width;
                     v.y = (v.y + 1.0) * 0.5 * PROJECTION.height;
                 }
 
-                engineState.triangleToShow.push(projectedTri);
+                const p0 = projectedTri.pos[0];
+                const p1 = projectedTri.pos[1];
+                const p2 = projectedTri.pos[2];
+
+                rasterizeTriangle(
+                    p0.x, p0.y, p0.z, 
+                    p1.x, p1.y, p1.z, 
+                    p2.x, p2.y, p2.z, 
+                    dp
+                );
             }
         }
     }
