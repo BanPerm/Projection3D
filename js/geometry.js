@@ -96,7 +96,7 @@ export function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
             for (let n = 0; n < nClippedTriangles; n++){
                 const clippedTri = clippedPool[n];
 
-                let projectedTri = new Triangle(new Vector3D(), new Vector3D(), new Vector3D());
+                let projectedTri = Triangle.getFromPool();
                 projectedTri.color = clippedTri.color;
 
                 // Projection
@@ -129,6 +129,7 @@ export function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                     dp
                 );
             }
+            Triangle.resetPool();
         }
     }
 }
