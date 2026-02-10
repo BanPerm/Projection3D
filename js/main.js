@@ -1,7 +1,7 @@
 //!!!!!!!! Commande à lancer avant de lancer le site !!!!!!!!!!\\
 // python -m http.server 8000
-import { CubeMesh } from './geometry.js';
 import {Vector3D} from './math.js';
+import { CubeMesh } from './mesh/cubeMesh.js';
 import { clearBuffers, drawBufferToCanvas, initRenderer } from './renderer.js';
 import { clearTriangles, engineState, initialisationCamera, PROJECTION, updateDimensions } from './state.js';
 

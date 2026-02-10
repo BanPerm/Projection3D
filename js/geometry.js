@@ -3,127 +3,6 @@ import {rasterizeTriangle} from "./renderer.js";
 import { CONFIG, engineState, PROJECTION } from "./state.js";
 import { Triangle } from "./triangle.js";
 
-export class Mesh {
-    constructor() {
-        this.pos = [];
-    }
-
-    async loadFromObjectFile(filePath) {
-        try {
-            const response = await fetch(filePath);
-            if (!response.ok) {
-                throw new Error('Failed to fetch file');
-            }
-            const text = await response.text();
-            const lines = text.split('\n');
-            const verts = [];
-            const tris = [];
-
-            lines.forEach(line => {
-                const tokens = line.trim().split(/\s+/);
-                if (tokens[0] === 'v') {
-                    const x = parseFloat(tokens[1]);
-                    const y = parseFloat(tokens[2]);
-                    const z = parseFloat(tokens[3]);
-                    verts.push(new Vector3D(x, y, z));
-                } else if (tokens[0] === 'f') {
-                    const f1 = parseInt(tokens[1]) - 1;
-                    const f2 = parseInt(tokens[2]) - 1;
-                    const f3 = parseInt(tokens[3]) - 1;
-                    tris.push(new Triangle(verts[f1], verts[f2], verts[f3]));
-                }
-            });
-
-            this.pos = tris;
-            return this.pos;
-        } catch (error) {
-            console.error('Failed to fetch or parse file:', error);
-            throw error;
-        }
-    }
-}
-
-export class CubeMesh {
-    constructor() {
-        this.mesh = new Mesh();
-        this.initialMesh = new Mesh();
-    }
-
-    async create() {
-        try {
-            //await this.mesh.loadFromObjectFile("object/voiture.obj");
-            await this.mesh.loadFromObjectFile("object/mountains.obj");
-            this.initialMesh.pos = this.mesh.pos.map(tri =>
-                new Triangle(
-                    new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
-                    new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-                    new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
-                )
-            );
-        } catch (error) {
-            console.error('Failed to create mesh:', error);
-        }
-    }
-
-    reset() {
-        this.mesh.pos = this.initialMesh.pos.map(tri =>
-            new Triangle(
-                new Vector3D(tri.pos[0].x, tri.pos[0].y, tri.pos[0].z),
-                new Vector3D(tri.pos[1].x, tri.pos[1].y, tri.pos[1].z),
-                new Vector3D(tri.pos[2].x, tri.pos[2].y, tri.pos[2].z)
-            )
-        );
-    }
-
-    draw(angleX = 0, angleY=0, angleZ = 0) {
-        this.reset();
-
-        projectAndStoreTriangle(this.mesh.pos, angleX, angleY, angleZ);
-
-    }
-}
-
-
-let edge1 = new Vector3D();
-let edge2 = new Vector3D();
-let h = new Vector3D();
-let s = new Vector3D();
-let q = new Vector3D();
-
-export class Ray {
-    constructor(origin, direction) {
-        this.origin = origin;
-        this.direction = direction;
-    }
-
-    //Algo de Möller-Trumbore
-    intersectTriangle(triangle){
-        let vertex0 = triangle.pos[0];
-        let vertex1 = triangle.pos[1];
-        let vertex2 = triangle.pos[2];
-        Vector3D.sub(vertex1, vertex0, edge1);
-        Vector3D.sub(vertex2, vertex0, edge2);
-        Vector3D.crossProduct(this.direction, edge2, h);
-        let a = Vector3D.dotProduct(edge1, h);
-        if (a > -Number.EPSILON && a<Number.EPSILON){
-            return false;
-        }
-        let f = 1/a;
-        Vector3D.sub(this.origin, vertex0, s);
-        let u = f* Vector3D.dotProduct(s,h);
-        if (u<0 || u >1){
-            return false;
-        }
-        Vector3D.crossProduct(s, edge1, q);
-        let v = f* Vector3D.dotProduct(this.direction, q);
-        if (v<0 || u+v>1){
-            return false;
-        }
-        let t = f* Vector3D.dotProduct(edge2,q);
-        return t > Number.EPSILON;
-    }
-}
-
 // Matrices de travail
 const matRotX = Matrice.create();
 const matRotY = Matrice.create();
@@ -151,7 +30,7 @@ const vCameraRay = new Vector3D();
 const vNearPlanePoint = new Vector3D(0, 0, 0.1);
 const vNearPlaneNormal = new Vector3D(0, 0, 1);
 
-function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
+export function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
 
     // Pré-calculer les matrices de rotation
     Matrice.matriceMakeRotationX(angleX, matRotX);
