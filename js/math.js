@@ -138,6 +138,7 @@ export class Vector3D {
     static clipAgainstPlane(plane_p, plane_n, in_tri, out_tri1, out_tri2) {
         const plane_dot = Vector3D.dotProduct(plane_n, plane_p);
 
+        //@TODO : Optimiser en évitant de faire des allocations dans cette fonction qui est appelée très souvent
         let inside_points = [];
         let outside_points = [];
 

@@ -30,28 +30,36 @@ const vCameraRay = new Vector3D();
 const vNearPlanePoint = new Vector3D(0, 0, 0.1);
 const vNearPlaneNormal = new Vector3D(0, 0, 1);
 
-export function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
-
-    // Pré-calculer les matrices de rotation
+export function prepareMatrices(angleX, angleY, angleZ) {
+    // 1. Matrice World (Rotation + Translation)
     Matrice.matriceMakeRotationX(angleX, matRotX);
     Matrice.matriceMakeRotationY(angleY, matRotY);
     Matrice.matriceMakeRotationZ(angleZ, matRotZ);
-    Matrice.matriceMakeTranslation(0, 0, 10, matTrans);
-    Matrice.matriceMakeProjection(PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj);
-
+    Matrice.matriceMakeTranslation(0, 0, 10, matTrans); // Ta translation actuelle
 
     Matrice.matriceMultiplyMatrix(matRotX, matRotY, matTemp);
     Matrice.matriceMultiplyMatrix(matTemp, matRotZ, matWorld);
     Matrice.matriceMultiplyMatrix(matWorld, matTrans, matWorld);
-    
-    // Caméra
+
+    // 2. Matrice View (Caméra)
     vUp.set(0, -1, 0);
     vTarget.set(0, 0, 1);
     updateLookDirection();
     Vector3D.add(engineState.camera, engineState.lookDirection, vTarget);
-
     Matrice.matriceAtPoint(engineState.camera, vTarget, vUp, matCamera);
     Matrice.matriceQuickInverse(matCamera, matView);
+
+    // 3. Matrice Projection
+    Matrice.matriceMakeProjection(PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj);
+
+    // On retourne les matrices dont on a besoin pour le Culling et le Rendu
+    return { matWorld, matView, matProj };
+}
+
+export function projectAndStoreTriangle(triangles, matrices) {
+    const { matWorld, matView, matProj } = matrices;
+
+    Triangle.resetPool();
 
     for (let i = 0; i < triangles.length; i++) {
         const tri = triangles[i];
@@ -129,7 +137,6 @@ export function projectAndStoreTriangle(triangles, angleX, angleY, angleZ) {
                     dp
                 );
             }
-            Triangle.resetPool();
         }
     }
 }
@@ -145,4 +152,61 @@ function updateLookDirection() {
     engineState.lookDirection.y = Math.sin(engineState.pitch);
     engineState.lookDirection.z = Math.cos(engineState.pitch) * Math.sin(engineState.yaw);
     engineState.lookDirection.normalise();
+}
+
+// Variable temporaire pour éviter l'allocation mémoire
+const vSphereCenterView = new Vector3D(); 
+
+/**
+ * Vérifie si une sphère est dans le champ de vision
+ * @param {Vector3D} centerLocal - Centre de la sphère (Local Space)
+ * @param {number} radius - Rayon de la sphère
+ * @param {Float32Array} matWorld - Matrice Monde de l'objet
+ * @param {Float32Array} matView - Matrice de la Caméra
+ */
+export function isSphereVisible(centerLocal, radius, matWorld, matView) {
+    
+    // 1. Transformer le centre Local -> World -> View
+    // On peut combiner World et View si tu as une matrice ModelView, sinon :
+    
+    // a. Local -> World
+    // Note : On utilise un vecteur temp pour ne pas créer d'objets
+    Matrice.matriceMultiplyVector(matWorld, centerLocal, vSphereCenterView); 
+    
+    // b. World -> View
+    // Attention : vSphereCenterView contient maintenant la position World.
+    // On réutilise la même variable pour le résultat View
+    const worldX = vSphereCenterView.x; 
+    const worldY = vSphereCenterView.y; 
+    const worldZ = vSphereCenterView.z;
+    
+    Matrice.matriceMultiplyVector(matView, vSphereCenterView, vSphereCenterView);
+
+    // MAINTENANT : vSphereCenterView est la position de la sphère par rapport à la caméra.
+    // Dans ton système, la caméra regarde vers Z+ (ou Z-, à vérifier selon ta matrice de projection).
+    // Supposons que Z augmente en s'éloignant de la caméra (standard OpenGL positif après transform).
+
+    const z = vSphereCenterView.z;
+    const x = vSphereCenterView.x;
+    const y = vSphereCenterView.y;
+
+    // --- TEST 1 : Z-Clipping (Trop proche ou trop loin) ---
+    // Si la sphère est entièrement derrière la caméra (z + rayon < Near)
+    if (z + radius < CONFIG.znear) return false;
+    // Si la sphère est trop loin (z - rayon > Far)
+    if (z - radius > CONFIG.zfar) return false;
+
+    // --- TEST 2 : Frustum Conique (Approximation rapide) ---
+    // Pour éviter de tester les 4 plans (gauche/droite/haut/bas), on vérifie si 
+    // l'objet est grossièrement dans le cône de vision.
+    // tan(fov/2) donne l'ouverture. 
+    // L'objet est visible si : |x| < z * ouverture + radius
+    
+    const limitX = z * Math.tan(PROJECTION.fovRad * 0.5) * PROJECTION.aspectRatio + radius;
+    const limitY = z * Math.tan(PROJECTION.fovRad * 0.5) + radius;
+
+    if (Math.abs(x) > limitX) return false; // Trop à gauche ou à droite
+    if (Math.abs(y) > limitY) return false; // Trop en haut ou en bas
+
+    return true; // Visible !
 }
