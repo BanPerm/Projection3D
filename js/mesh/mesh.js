@@ -25,10 +25,19 @@ export class Mesh {
                     const z = parseFloat(tokens[3]);
                     verts.push(new Vector3D(x, y, z));
                 } else if (tokens[0] === 'f') {
-                    const f1 = parseInt(tokens[1]) - 1;
-                    const f2 = parseInt(tokens[2]) - 1;
-                    const f3 = parseInt(tokens[3]) - 1;
-                    tris.push(new Triangle(verts[f1], verts[f2], verts[f3]));
+                    const faceVerts = tokens.slice(1);
+
+                    for (let i = 1; i < faceVerts.length - 1; i++) {
+                        const v1Index = parseInt(faceVerts[0].split('/')[0]) - 1;
+                        const v2Index = parseInt(faceVerts[i].split('/')[0]) - 1;
+                        const v3Index = parseInt(faceVerts[i + 1].split('/')[0]) - 1;
+
+                        tris.push(new Triangle(
+                            verts[v1Index],
+                            verts[v2Index],
+                            verts[v3Index]
+                        ));
+                    }
                 }
             });
 
