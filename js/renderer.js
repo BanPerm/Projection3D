@@ -105,7 +105,6 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
                 const z = w1 * z1 + w2 * z2 + w3 * z3;
 
                 // 5. Test de profondeur : Si la profondeur calculée est inférieure à celle stockée dans le z-buffer, on met à jour le pixel et le z-buffer
-                const index = y * width + x;
                 if (z < depth[index]) {
                     depth[index] = z;
                     pixels[index] = colorInt;
