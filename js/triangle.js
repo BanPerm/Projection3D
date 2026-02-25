@@ -11,7 +11,6 @@ export class Triangle {
     }
 
     //Systeme de pooling
-
     static pool = [];
     static poolIndex = 0;
 

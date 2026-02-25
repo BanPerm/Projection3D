@@ -21,10 +21,7 @@ initRenderer(ctx, PROJECTION.width, PROJECTION.height);
 initialisationCamera(new Vector3D(), new Vector3D());
 
 // FPS variables
-let frameCount = 0;
 let lastTime = performance.now();
-let lastTimeFPS = performance.now();
-let fps = 0;
 
 const normalSpeed = 16;
 const boostedSpeed = 64;
@@ -115,7 +112,6 @@ function animate() {
 
     drawBufferToCanvas(ctx);
 
-    // Calcul des FPS
     displayFPS();
 
     requestAnimationFrame(animate);

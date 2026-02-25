@@ -39,3 +39,10 @@ export function initialisationCamera(camera, lookDirection) {
     engineState.camera = camera;
     engineState.lookDirection = lookDirection;
 }
+
+export const CONFIG_OPTIONAL = {
+    color_is_activate : false,
+    color_clipping_1 : 'blue',
+    color_clipping_2 : 'green',
+    color_clipping_3 : 'yellow'
+}
