@@ -157,56 +157,34 @@ function updateLookDirection() {
 // Variable temporaire pour éviter l'allocation mémoire
 const vSphereCenterView = new Vector3D(); 
 
-/**
- * Vérifie si une sphère est dans le champ de vision
- * @param {Vector3D} centerLocal - Centre de la sphère (Local Space)
- * @param {number} radius - Rayon de la sphère
- * @param {Float32Array} matWorld - Matrice Monde de l'objet
- * @param {Float32Array} matView - Matrice de la Caméra
- */
+
 export function isSphereVisible(centerLocal, radius, matWorld, matView) {
     
-    // 1. Transformer le centre Local -> World -> View
-    // On peut combiner World et View si tu as une matrice ModelView, sinon :
-    
-    // a. Local -> World
-    // Note : On utilise un vecteur temp pour ne pas créer d'objets
+    // 1. Transformer le centre Local -> World
     Matrice.matriceMultiplyVector(matWorld, centerLocal, vSphereCenterView); 
     
-    // b. World -> View
-    // Attention : vSphereCenterView contient maintenant la position World.
-    // On réutilise la même variable pour le résultat View
-    const worldX = vSphereCenterView.x; 
-    const worldY = vSphereCenterView.y; 
-    const worldZ = vSphereCenterView.z;
-    
+    // 2. Transformer World -> View
     Matrice.matriceMultiplyVector(matView, vSphereCenterView, vSphereCenterView);
-
-    // MAINTENANT : vSphereCenterView est la position de la sphère par rapport à la caméra.
-    // Dans ton système, la caméra regarde vers Z+ (ou Z-, à vérifier selon ta matrice de projection).
-    // Supposons que Z augmente en s'éloignant de la caméra (standard OpenGL positif après transform).
 
     const z = vSphereCenterView.z;
     const x = vSphereCenterView.x;
     const y = vSphereCenterView.y;
 
-    // --- TEST 1 : Z-Clipping (Trop proche ou trop loin) ---
-    // Si la sphère est entièrement derrière la caméra (z + rayon < Near)
-    if (z + radius < CONFIG.znear) return false;
-    // Si la sphère est trop loin (z - rayon > Far)
-    if (z - radius > CONFIG.zfar) return false;
+    // --- TEST 1 : Z-Clipping ---
+    if (z + radius < CONFIG.znear) return false; // Trop près / derrière
+    if (z - radius > CONFIG.zfar) return false;  // Trop loin
 
-    // --- TEST 2 : Frustum Conique (Approximation rapide) ---
-    // Pour éviter de tester les 4 plans (gauche/droite/haut/bas), on vérifie si 
-    // l'objet est grossièrement dans le cône de vision.
-    // tan(fov/2) donne l'ouverture. 
-    // L'objet est visible si : |x| < z * ouverture + radius
     
-    const limitX = z * Math.tan(PROJECTION.fovRad * 0.5) * PROJECTION.aspectRatio + radius;
-    const limitY = z * Math.tan(PROJECTION.fovRad * 0.5) + radius;
+    const halfHeightAtZ = Math.abs(z) / PROJECTION.fovRad;
 
-    if (Math.abs(x) > limitX) return false; // Trop à gauche ou à droite
-    if (Math.abs(y) > limitY) return false; // Trop en haut ou en bas
+    const halfWidthAtZ = halfHeightAtZ / PROJECTION.aspectRatio;
+
+    // On ajoute le rayon pour tolérer que le centre sorte un peu, tant que le bord touche
+    const limitX = halfWidthAtZ + radius;
+    const limitY = halfHeightAtZ + radius;
+
+    if (Math.abs(x) > limitX) return false; // Sorti à gauche ou droite
+    if (Math.abs(y) > limitY) return false; // Sorti en haut ou bas
 
     return true; // Visible !
 }
