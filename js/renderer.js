@@ -67,7 +67,6 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
 
     // Pré-calculs pour les coordonnées barycentriques (aire du triangle)
     const area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
-
     if (Math.abs(area) < 0.0001) return;
 
     // Si le triangle est orienté dans le mauvais sens, on peut l'ignorer (back-face culling)
@@ -90,27 +89,48 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
     const invArea = 1.0 / area;
     const colorInt = colorToInt(colorData, lum);
 
-    for(let y = minY; y <= maxY; y++) {
-        let index = y * width + minX;
-        
-        for(let x = minX; x <= maxX; x++) {
-            // 2. Coordonées barycentriques : On calcule les coordonnées barycentriques du point (x, y) par rapport au triangle
-            const w1 = ((x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)) * invArea;
-            const w2 = ((x3 - x2) * (y - y2) - (y3 - y2) * (x - x2)) * invArea;
-            const w3 = 1 - w1 - w2;
+    // Utilisation de  PINEDA
 
-            // 3. Test d'appartenance : Si les coordonnées barycentriques sont toutes positives, le point est à l'intérieur du triangle
+    // 1. Évaluation des fonctions d'arêtes au pixel de départ (minX, minY)
+    let w1_row = ((x2 - x1) * (minY - y1) - (y2 - y1) * (minX - x1)) * invArea;
+    let w2_row = ((x3 - x2) * (minY - y2) - (y3 - y2) * (minX - x2)) * invArea;
+
+    // 2. Dérivées par rapport à X (pas de 1 pixel à droite)
+    const dw1_dx = -(y2 - y1) * invArea;
+    const dw2_dx = -(y3 - y2) * invArea;
+
+    // 3. Dérivées par rapport à Y (pas de 1 pixel en bas)
+    const dw1_dy = (x2 - x1) * invArea;
+    const dw2_dy = (x3 - x2) * invArea;
+
+    for (let y = minY; y <= maxY; y++) {
+        let index = y * width + minX;
+        let w1 = w1_row;
+        let w2 = w2_row;
+        
+        for (let x = minX; x <= maxX; x++) {
+            const w3 = 1.0 - w1 - w2;
+
+            // Test d'appartenance
             if (w1 >= 0 && w2 >= 0 && w3 >= 0) {
-                // 4. Interpolation de la profondeur : On calcule la profondeur du point (x, y) en interpolant les profondeurs des sommets du triangle
+                // Interpolation linéaire de la profondeur
                 const z = w1 * z1 + w2 * z2 + w3 * z3;
 
-                // 5. Test de profondeur : Si la profondeur calculée est inférieure à celle stockée dans le z-buffer, on met à jour le pixel et le z-buffer
+                // Test de profondeur (Early Z)
                 if (z < depth[index]) {
                     depth[index] = z;
                     pixels[index] = colorInt;
                 }
             }
-            index ++
+            
+            // Progression incrémentale en X
+            w1 += dw1_dx;
+            w2 += dw2_dx;
+            index++;
         }
+        
+        // Progression incrémentale en Y
+        w1_row += dw1_dy;
+        w2_row += dw2_dy;
     }
 }

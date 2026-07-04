@@ -1,126 +1,119 @@
 import { Matrice, Vector3D } from "./math.js";
-import {rasterizeTriangle} from "./renderer.js";
+import { rasterizeTriangle } from "./renderer.js";
 import { CONFIG, engineState, PROJECTION } from "./state.js";
 import { Triangle } from "./triangle.js";
 
-// Matrices de travail
-const matRotX = Matrice.create();
-const matRotY = Matrice.create();
-const matRotZ = Matrice.create();
-const matTrans = Matrice.create();
-const matWorld = Matrice.create();
-const matTemp = Matrice.create();
-const matProj = Matrice.create();
+// --- Matrices partagées, communes à toutes les entités d'une frame ---
 const matCamera = Matrice.create();
 const matView = Matrice.create();
+const matProj = Matrice.create();
 
-// Triangles de travail
-const triTransformed = new Triangle();
-const triViewed = new Triangle(); 
+// --- Triangles de travail (scratch, partagés : le rendu est séquentiel) ---
+const triViewed = new Triangle();
 const clippedPool = [new Triangle(), new Triangle()];
 
-// Vecteurs de travail
+// --- Vecteurs de travail ---
 const vUp = new Vector3D(0, -1, 0);
 const vTarget = new Vector3D(0, 0, 1);
-const vLightDir = new Vector3D(0, 0, -1);
+
+// Direction de lumière exprimée dans le MONDE, w=0 => c'est une direction,
+// pas un point : la translation de matView ne doit pas l'affecter.
+const vLightDirWorld = new Vector3D(100, -10, 100, 0);
+const vLightDirView = new Vector3D(0, 0, 0, 0);
+
 const vNormal = new Vector3D();
 const vLine1 = new Vector3D();
 const vLine2 = new Vector3D();
-const vCameraRay = new Vector3D();
 const vNearPlanePoint = new Vector3D(0, 0, 0.1);
 const vNearPlaneNormal = new Vector3D(0, 0, 1);
 
-export function prepareMatrices(angleX, angleY, angleZ) {
-    // 1. Matrice World (Rotation + Translation)
-    Matrice.matriceMakeRotationX(angleX, matRotX);
-    Matrice.matriceMakeRotationY(angleY, matRotY);
-    Matrice.matriceMakeRotationZ(angleZ, matRotZ);
-    Matrice.matriceMakeTranslation(0, 0, 10, matTrans); // Ta translation actuelle
+/**
+ * À appeler UNE FOIS PAR FRAME (pas par entité).
+ * Calcule matView/matProj (dépendent seulement de la caméra) et
+ * pré-transforme la direction de lumière en espace vue.
+ */
+export function updateCameraMatrices() {
+    updateLookDirection();
 
-    Matrice.matriceMultiplyMatrix(matRotX, matRotY, matTemp);
-    Matrice.matriceMultiplyMatrix(matTemp, matRotZ, matWorld);
-    Matrice.matriceMultiplyMatrix(matWorld, matTrans, matWorld);
-
-    // 2. Matrice View (Caméra)
     vUp.set(0, -1, 0);
     vTarget.set(0, 0, 1);
-    updateLookDirection();
     Vector3D.add(engineState.camera, engineState.lookDirection, vTarget);
+
     Matrice.matriceAtPoint(engineState.camera, vTarget, vUp, matCamera);
     Matrice.matriceQuickInverse(matCamera, matView);
 
-    // 3. Matrice Projection
-    Matrice.matriceMakeProjection(PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj);
+    Matrice.matriceMakeProjection(
+        PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj
+    );
 
-    // On retourne les matrices dont on a besoin pour le Culling et le Rendu
-    return { matWorld, matView, matProj };
+    // Direction de lumière : on ignore la translation grâce à w=0
+    vLightDirWorld.set(100, -10, 100, 0);
+    vLightDirWorld.normalise();
+    Matrice.matriceMultiplyVector(matView, vLightDirWorld, vLightDirView);
+
+    return { matView, matProj };
 }
 
-export function projectAndStoreTriangle(triangles, matrices) {
-    const { matWorld, matView, matProj } = matrices;
+/**
+ * À appeler une fois par entité et par frame : combine sa matrice modèle
+ * (reconstruite seulement si "dirty") avec la vue caméra courante.
+ * Une seule multiplication 4x4 par entité, indépendamment du nombre
+ * de triangles qu'elle contient.
+ */
+export function computeEntityModelView(entity) {
+    entity.transform.updateModelMatrix(entity.matModel);
+    // multiplyMatrix(A, B) applique B PUIS A : on veut model d'abord, view ensuite
+    // => multiplyMatrix(matView, entity.matModel, ...)
+    Matrice.matriceMultiplyMatrix(matView, entity.matModel, entity.matModelView);
+    return entity.matModelView;
+}
 
+export function projectAndStoreTriangle(triangles, matModelView) {
     Triangle.resetPool();
 
     for (let i = 0; i < triangles.length; i++) {
         const tri = triangles[i];
 
-        // Transformation World
-        Matrice.matriceMultiplyVector(matWorld, tri.pos[0], triTransformed.pos[0]);
-        Matrice.matriceMultiplyVector(matWorld, tri.pos[1], triTransformed.pos[1]);
-        Matrice.matriceMultiplyVector(matWorld, tri.pos[2], triTransformed.pos[2]);
+        // Une seule transformation : directement Local -> Vue
+        Matrice.matriceMultiplyVector(matModelView, tri.pos[0], triViewed.pos[0]);
+        Matrice.matriceMultiplyVector(matModelView, tri.pos[1], triViewed.pos[1]);
+        Matrice.matriceMultiplyVector(matModelView, tri.pos[2], triViewed.pos[2]);
 
-        // Calcul de la normale pour le Culling
-        Vector3D.sub(triTransformed.pos[1], triTransformed.pos[0], vLine1);
-        Vector3D.sub(triTransformed.pos[2], triTransformed.pos[0], vLine2);
+        // Normale de face calculée directement en espace vue
+        Vector3D.sub(triViewed.pos[1], triViewed.pos[0], vLine1);
+        Vector3D.sub(triViewed.pos[2], triViewed.pos[0], vLine2);
         Vector3D.crossProduct(vLine1, vLine2, vNormal);
         vNormal.normalise();
 
-        Vector3D.sub(triTransformed.pos[0], engineState.camera, vCameraRay);
+        // La caméra est TOUJOURS à l'origine en espace vue :
+        // le rayon caméra->point est donc simplement triViewed.pos[0].
+        if (Vector3D.dotProduct(vNormal, triViewed.pos[0]) < 0) {
 
-        // Product Dot pour vérifier si le triangle est bien visible
-        if (Vector3D.dotProduct(vNormal, vCameraRay) < 0) {
-
-            // Illumination
-            vLightDir.set(0, 0, -1);
-            vLightDir.normalise();
-            const dp = Math.max(0.1, Vector3D.dotProduct(vLightDir, vNormal));
-
-            // Transformation View (Caméra)
-            Matrice.matriceMultiplyVector(matView, triTransformed.pos[0], triViewed.pos[0]);
-            Matrice.matriceMultiplyVector(matView, triTransformed.pos[1], triViewed.pos[1]);
-            Matrice.matriceMultiplyVector(matView, triTransformed.pos[2], triViewed.pos[2]);
+            const dp = Math.max(0.2, Vector3D.dotProduct(vLightDirView, vNormal));
             triViewed.color = (tri.color === 'white') ? getColour(dp) : tri.color;
 
-
-            // Clipping contre le plan Z-Near
+            // Clipping contre le plan Z-Near (déjà en espace vue, inchangé)
             const nClippedTriangles = Vector3D.clipAgainstPlane(
-                vNearPlanePoint, 
-                vNearPlaneNormal, 
-                triViewed, 
-                clippedPool[0], 
+                vNearPlanePoint,
+                vNearPlaneNormal,
+                triViewed,
+                clippedPool[0],
                 clippedPool[1]
             );
 
-            for (let n = 0; n < nClippedTriangles; n++){
+            for (let n = 0; n < nClippedTriangles; n++) {
                 const clippedTri = clippedPool[n];
 
                 let projectedTri = Triangle.getFromPool();
                 projectedTri.color = clippedTri.color;
 
-                // Projection
                 Matrice.matriceMultiplyVector(matProj, clippedTri.pos[0], projectedTri.pos[0]);
                 Matrice.matriceMultiplyVector(matProj, clippedTri.pos[1], projectedTri.pos[1]);
                 Matrice.matriceMultiplyVector(matProj, clippedTri.pos[2], projectedTri.pos[2]);
 
-                // Division perspective et Scale
                 for (let p = 0; p < 3; p++) {
                     const v = projectedTri.pos[p];
-
-                    if (Math.abs(v.w) > 0.0001) {
-                        v.divide(v.w);
-                    }
-                    
-                    // Scale into view
+                    if (Math.abs(v.w) > 0.0001) v.divide(v.w);
                     v.x = (v.x + 1.0) * 0.5 * PROJECTION.width;
                     v.y = (v.y + 1.0) * 0.5 * PROJECTION.height;
                 }
@@ -130,8 +123,8 @@ export function projectAndStoreTriangle(triangles, matrices) {
                 const p2 = projectedTri.pos[2];
 
                 rasterizeTriangle(
-                    p0.x, p0.y, p0.z, 
-                    p1.x, p1.y, p1.z, 
+                    p0.x, p0.y, p0.z,
+                    p1.x, p1.y, p1.z,
                     p2.x, p2.y, p2.z,
                     clippedTri.color,
                     dp
@@ -140,7 +133,6 @@ export function projectAndStoreTriangle(triangles, matrices) {
         }
     }
 }
-
 
 function getColour(lum) {
     let grey = Math.floor(255 * lum);
@@ -155,36 +147,30 @@ function updateLookDirection() {
 }
 
 // Variable temporaire pour éviter l'allocation mémoire
-const vSphereCenterView = new Vector3D(); 
+const vSphereCenterView = new Vector3D();
 
-
-export function isSphereVisible(centerLocal, radius, matWorld, matView) {
-    
-    // 1. Transformer le centre Local -> World
-    Matrice.matriceMultiplyVector(matWorld, centerLocal, vSphereCenterView); 
-    
-    // 2. Transformer World -> View
-    Matrice.matriceMultiplyVector(matView, vSphereCenterView, vSphereCenterView);
+/**
+ * Test de visibilité par sphère englobante, désormais avec UNE SEULE
+ * matrice combinée (model-view) au lieu de deux transformations séparées.
+ */
+export function isSphereVisible(centerLocal, radius, matModelView) {
+    Matrice.matriceMultiplyVector(matModelView, centerLocal, vSphereCenterView);
 
     const z = vSphereCenterView.z;
     const x = vSphereCenterView.x;
     const y = vSphereCenterView.y;
 
-    // --- TEST 1 : Z-Clipping ---
-    if (z + radius < CONFIG.znear) return false; // Trop près / derrière
-    if (z - radius > CONFIG.zfar) return false;  // Trop loin
+    if (z + radius < CONFIG.znear) return false;
+    if (z - radius > CONFIG.zfar) return false;
 
-    
     const halfHeightAtZ = Math.abs(z) / PROJECTION.fovRad;
-
     const halfWidthAtZ = halfHeightAtZ / PROJECTION.aspectRatio;
 
-    // On ajoute le rayon pour tolérer que le centre sorte un peu, tant que le bord touche
     const limitX = halfWidthAtZ + radius;
     const limitY = halfHeightAtZ + radius;
 
-    if (Math.abs(x) > limitX) return false; // Sorti à gauche ou droite
-    if (Math.abs(y) > limitY) return false; // Sorti en haut ou bas
+    if (Math.abs(x) > limitX) return false;
+    if (Math.abs(y) > limitY) return false;
 
-    return true; // Visible !
+    return true;
 }

@@ -1,20 +1,18 @@
 //!!!!!!!! Commande à lancer avant de lancer le site !!!!!!!!!!\\
 // python -m http.server 8000
 import {Vector3D} from './math.js';
-import { CubeMesh } from './mesh/cubeMesh.js';
+import { MeshInstance } from './mesh/meshInstance.js';
+import { updateCameraMatrices } from './geometry.js';
 import { clearBuffers, drawBufferToCanvas, initRenderer } from './renderer.js';
 import { clearTriangles, engineState, initialisationCamera, PROJECTION, updateDimensions } from './state.js';
 
 
 const canvas = document.getElementById('canvas');
-// @ts-ignore
 const ctx = canvas.getContext('2d', { alpha: false });
 
 // Initialisation de la fenêtre
 updateDimensions(window.innerWidth, window.innerHeight);
-// @ts-ignore
 canvas.width = PROJECTION.width;
-// @ts-ignore
 canvas.height = PROJECTION.height;
 
 initRenderer(ctx, PROJECTION.width, PROJECTION.height);
@@ -57,6 +55,13 @@ canvas.addEventListener('click', () => {
     // @ts-ignore
     canvas.requestPointerLock = canvas.requestPointerLock || canvas.mozRequestPointerLock;
     canvas.requestPointerLock();
+});
+
+window.addEventListener('resize', () => {
+    updateDimensions(window.innerWidth, window.innerHeight);
+    canvas.width = PROJECTION.width;
+    canvas.height = PROJECTION.height;
+    initRenderer(ctx, PROJECTION.width, PROJECTION.height);
 });
 
 // Écouter les événements de changement d'état du verrouillage du curseur
@@ -111,7 +116,13 @@ function animate() {
 
     updateCamera(deltaTime);
 
-    mesh.draw(0,0,0);
+    // matView/matProj + direction de lumière en espace vue : une fois par frame,
+    // partagé par toutes les entités (pas recalculé par objet).
+    updateCameraMatrices();
+
+    for (const entity of entities) {
+        entity.draw();
+    }
 
     drawBufferToCanvas(ctx);
 
@@ -144,7 +155,18 @@ function displayFPS() {
 }
 
 
-const mesh = new CubeMesh();
-mesh.create().then(() => {
+// Plusieurs instances, partageant le même .obj chargé une seule fois,
+// chacune avec sa propre position/rotation.
+const entities = [
+    new MeshInstance("object/voiture.obj"),
+    new MeshInstance("object/voiture.obj"),
+    new MeshInstance("object/voiture.obj"),
+];
+
+entities[0].transform.setPosition(0, 0, 10);
+entities[1].transform.setPosition(20, 0, 10);
+entities[2].transform.setPosition(-20, 0, 25).setRotation(0, Math.PI / 4, 0);
+
+Promise.all(entities.map(e => e.create())).then(() => {
     animate();
 });
