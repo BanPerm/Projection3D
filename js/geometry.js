@@ -2,6 +2,7 @@ import { Matrice, Vector3D } from "./math.js";
 import { rasterizeTriangle } from "./renderer.js";
 import { CONFIG, engineState, PROJECTION } from "./state.js";
 import { Triangle } from "./triangle.js";
+import { clipTriangleAgainstFrustum, updateFrustumPlanes } from "./clipping.js";
 
 // --- Matrices partagées, communes à toutes les entités d'une frame ---
 const matCamera = Matrice.create();
@@ -10,7 +11,6 @@ const matProj = Matrice.create();
 
 // --- Triangles de travail (scratch, partagés : le rendu est séquentiel) ---
 const triViewed = new Triangle();
-const clippedPool = [new Triangle(), new Triangle()];
 
 // --- Vecteurs de travail ---
 const vUp = new Vector3D(0, -1, 0);
@@ -24,8 +24,6 @@ const vLightDirView = new Vector3D(0, 0, 0, 0);
 const vNormal = new Vector3D();
 const vLine1 = new Vector3D();
 const vLine2 = new Vector3D();
-const vNearPlanePoint = new Vector3D(0, 0, 0.1);
-const vNearPlaneNormal = new Vector3D(0, 0, 1);
 
 /**
  * À appeler UNE FOIS PAR FRAME (pas par entité).
@@ -45,6 +43,9 @@ export function updateCameraMatrices() {
     Matrice.matriceMakeProjection(
         PROJECTION.fovRad, PROJECTION.aspectRatio, CONFIG.znear, CONFIG.zfar, matProj
     );
+
+    // Pas de recalcul si fovRad/aspectRatio n'ont pas changé depuis la dernière frame
+    updateFrustumPlanes();
 
     // Direction de lumière : on ignore la translation grâce à w=0
     vLightDirWorld.set(100, -10, 100, 0);
@@ -90,26 +91,25 @@ export function projectAndStoreTriangle(triangles, matModelView) {
         if (Vector3D.dotProduct(vNormal, triViewed.pos[0]) < 0) {
 
             const dp = Math.max(0.2, Vector3D.dotProduct(vLightDirView, vNormal));
-            triViewed.color = (tri.color === 'white') ? getColour(dp) : tri.color;
+            const faceColor = (tri.color === 'white') ? getColour(dp) : tri.color;
 
-            // Clipping contre le plan Z-Near (déjà en espace vue, inchangé)
-            const nClippedTriangles = Vector3D.clipAgainstPlane(
-                vNearPlanePoint,
-                vNearPlaneNormal,
-                triViewed,
-                clippedPool[0],
-                clippedPool[1]
+            // Clipping complet contre les 6 plans du frustum. Le polygone résultant
+            // tient dans un buffer fixe de 9 sommets max (voir clipping.js) :
+            // pas d'explosion combinatoire, pas d'allocation.
+            const { buf: clippedVerts, len: clippedLen } = clipTriangleAgainstFrustum(
+                triViewed.pos[0], triViewed.pos[1], triViewed.pos[2]
             );
 
-            for (let n = 0; n < nClippedTriangles; n++) {
-                const clippedTri = clippedPool[n];
+            if (clippedLen < 3) continue; // entièrement hors du frustum
 
+            // Triangulation en éventail du polygone (couleur plate : identique pour tous les sous-triangles)
+            for (let n = 1; n < clippedLen - 1; n++) {
                 let projectedTri = Triangle.getFromPool();
-                projectedTri.color = clippedTri.color;
+                projectedTri.color = faceColor;
 
-                Matrice.matriceMultiplyVector(matProj, clippedTri.pos[0], projectedTri.pos[0]);
-                Matrice.matriceMultiplyVector(matProj, clippedTri.pos[1], projectedTri.pos[1]);
-                Matrice.matriceMultiplyVector(matProj, clippedTri.pos[2], projectedTri.pos[2]);
+                Matrice.matriceMultiplyVector(matProj, clippedVerts[0], projectedTri.pos[0]);
+                Matrice.matriceMultiplyVector(matProj, clippedVerts[n], projectedTri.pos[1]);
+                Matrice.matriceMultiplyVector(matProj, clippedVerts[n + 1], projectedTri.pos[2]);
 
                 for (let p = 0; p < 3; p++) {
                     const v = projectedTri.pos[p];
@@ -126,7 +126,7 @@ export function projectAndStoreTriangle(triangles, matModelView) {
                     p0.x, p0.y, p0.z,
                     p1.x, p1.y, p1.z,
                     p2.x, p2.y, p2.z,
-                    clippedTri.color,
+                    faceColor,
                     dp
                 );
             }
