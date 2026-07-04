@@ -62,6 +62,7 @@ export function updateFrustumPlanes() {
  */
 function clipPolygonAgainstPlane(inBuf, inLen, planeP, planeN, outBuf) {
     let outLen = 0;
+    //let anyOutside = false; // vrai si au moins un sommet était hors de ce plan
 
     for (let i = 0; i < inLen; i++) {
         const curr = inBuf[i];
@@ -72,6 +73,8 @@ function clipPolygonAgainstPlane(inBuf, inLen, planeP, planeN, outBuf) {
 
         const currInside = dCurr >= 0;
         const nextInside = dNext >= 0;
+
+        //if (!currInside) anyOutside = true;
 
         if (currInside) {
             if (outLen >= outBuf.length) { console.warn('clipPolygonAgainstPlane: buffer plein, sommet ignoré'); }
@@ -84,6 +87,10 @@ function clipPolygonAgainstPlane(inBuf, inLen, planeP, planeN, outBuf) {
         }
     }
 
+    // Si rien n'était dehors, le polygone de sortie est identique à l'entrée :
+    // pas la peine de comparer sommet par sommet, "anyOutside" suffit à savoir
+    // si CE plan a modifié quelque chose.
+    //return { len: outLen, changed: anyOutside };
     return outLen;
 }
 
@@ -100,10 +107,12 @@ export function clipTriangleAgainstFrustum(p0, p1, p2) {
 
     let curBuf = bufA, curLen = 3;
     let nextBuf = bufB;
+    //let wasClipped = false;
 
     for (let i = 0; i < planes.length; i++) {
         const plane = planes[i];
         const newLen = clipPolygonAgainstPlane(curBuf, curLen, plane.p, plane.n, nextBuf);
+        //if (changed) wasClipped = true;
         if (newLen === 0) return { buf: curBuf, len: 0 };
 
         const tmp = curBuf;

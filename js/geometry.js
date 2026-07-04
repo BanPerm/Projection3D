@@ -96,6 +96,12 @@ export function projectAndStoreTriangle(triangles, matModelView) {
             // Clipping complet contre les 6 plans du frustum. Le polygone résultant
             // tient dans un buffer fixe de 9 sommets max (voir clipping.js) :
             // pas d'explosion combinatoire, pas d'allocation.
+            /*
+            const { buf: clippedVerts, len: clippedLen, wasClipped } = clipTriangleAgainstFrustum(
+                triViewed.pos[0], triViewed.pos[1], triViewed.pos[2]
+            );
+            */
+
             const { buf: clippedVerts, len: clippedLen } = clipTriangleAgainstFrustum(
                 triViewed.pos[0], triViewed.pos[1], triViewed.pos[2]
             );
@@ -121,6 +127,15 @@ export function projectAndStoreTriangle(triangles, matModelView) {
                 const p0 = projectedTri.pos[0];
                 const p1 = projectedTri.pos[1];
                 const p2 = projectedTri.pos[2];
+
+                // Debug : wasClipped détecte les DEUX cas (2-dedans/1-dehors ET 1-dedans/2-dehors),
+                // contrairement à un test sur clippedLen qui ne voit que la moitié des triangles coupés.
+                /*
+                let debugColor = wasClipped ? 'blue' : faceColor;
+                if (clippedLen>3){
+                    debugColor = wasClipped ? 'yellow' : faceColor;
+                }
+                */
 
                 rasterizeTriangle(
                     p0.x, p0.y, p0.z,
