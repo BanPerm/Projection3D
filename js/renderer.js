@@ -57,6 +57,9 @@ export function drawBufferToCanvas(ctx) {
 
 const CULLING_SENS = 1;
 
+/**
+ * Rasterise un triangle en mode couleur plate (comportement historique, inchangé).
+ */
 export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData, lum = 1.0) {
     if (isNaN(x1) || isNaN(x2) || isNaN(x3) || isNaN(y1) || isNaN(y2) || isNaN(y3)) return;
 
@@ -113,8 +116,11 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
 
             // Test d'appartenance
             if (w1 >= 0 && w2 >= 0 && w3 >= 0) {
-                // Interpolation linéaire de la profondeur
-                const z = w1 * z1 + w2 * z2 + w3 * z3;
+                // Interpolation linéaire de la profondeur.
+                // ATTENTION : à cause de la définition des edge functions ci-dessus,
+                // w1 correspond en réalité au sommet 3, w2 au sommet 1, w3 au sommet 2
+                // (rotation cyclique). Vérifié empiriquement : w1=1 au sommet 3, pas au sommet 1.
+                const z = w2 * z1 + w3 * z2 + w1 * z3;
 
                 // Test de profondeur (Early Z)
                 if (z < depth[index]) {
@@ -130,6 +136,99 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
         }
         
         // Progression incrémentale en Y
+        w1_row += dw1_dy;
+        w2_row += dw2_dy;
+    }
+}
+
+/**
+ * Rasterise un triangle TEXTURÉ avec interpolation perspective-correcte.
+ * (x,y,z) sont les coordonnées écran/NDC habituelles (post perspective-divide).
+ * invW est l'inverse du w original AVANT la division perspective (1/w),
+ * u/v sont les coordonnées de texture brutes de chaque sommet.
+ * lum applique l'éclairage directionnel existant (même formule que le mode couleur plate).
+ */
+export function rasterizeTriangleTextured(
+    x1, y1, z1, invW1, u1, v1,
+    x2, y2, z2, invW2, u2, v2,
+    x3, y3, z3, invW3, u3, v3,
+    texture, lum = 1.0
+) {
+    if (isNaN(x1) || isNaN(x2) || isNaN(x3) || isNaN(y1) || isNaN(y2) || isNaN(y3)) return;
+
+    const width = RENDER_BUFFER.width;
+    const height = RENDER_BUFFER.height;
+    const pixels = RENDER_BUFFER.pixelBuffer;
+    const depth = RENDER_BUFFER.zBuffer;
+
+    const area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+    if (Math.abs(area) < 0.0001) return;
+
+    let minX = Math.max(0, Math.floor(Math.min(x1, x2, x3)));
+    let maxX = Math.min(width - 1, Math.ceil(Math.max(x1, x2, x3)));
+    let minY = Math.max(0, Math.floor(Math.min(y1, y2, y3)));
+    let maxY = Math.min(height - 1, Math.ceil(Math.max(y1, y2, y3)));
+
+    if (minX > maxX || minY > maxY) return;
+
+    const invArea = 1.0 / area;
+
+    // Les attributs à interpoler perspective-correctement sont pré-divisés par w
+    // (voir clipping.js/geometry.js : invW = 1/w original, préservé avant le divide)
+    const u1w = u1 * invW1, v1w = v1 * invW1;
+    const u2w = u2 * invW2, v2w = v2 * invW2;
+    const u3w = u3 * invW3, v3w = v3 * invW3;
+
+    // Éclaircissement/assombrissement selon la lumière, appliqué au texel (comme
+    // getColour() le fait pour le flat shading)
+    const litLum = Math.min(1, Math.max(0, lum));
+
+    let w1_row = ((x2 - x1) * (minY - y1) - (y2 - y1) * (minX - x1)) * invArea;
+    let w2_row = ((x3 - x2) * (minY - y2) - (y3 - y2) * (minX - x2)) * invArea;
+    const dw1_dx = -(y2 - y1) * invArea;
+    const dw2_dx = -(y3 - y2) * invArea;
+    const dw1_dy = (x2 - x1) * invArea;
+    const dw2_dy = (x3 - x2) * invArea;
+
+    for (let y = minY; y <= maxY; y++) {
+        let index = y * width + minX;
+        let w1 = w1_row;
+        let w2 = w2_row;
+
+        for (let x = minX; x <= maxX; x++) {
+            const w3 = 1.0 - w1 - w2;
+
+            if (w1 >= 0 && w2 >= 0 && w3 >= 0) {
+                // Même correction de correspondance que rasterizeTriangle (voir commentaire là-bas) :
+                // w1<->sommet3, w2<->sommet1, w3<->sommet2.
+                const z = w2 * z1 + w3 * z2 + w1 * z3;
+
+                if (z < depth[index]) {
+                    // Interpolation perspective-correcte : interpoler 1/w, u/w, v/w
+                    // linéairement en espace écran, puis diviser pour retrouver u,v réels.
+                    const interpInvW = w2 * invW1 + w3 * invW2 + w1 * invW3;
+                    const u = (w2 * u1w + w3 * u2w + w1 * u3w) / interpInvW;
+                    const v = (w2 * v1w + w3 * v2w + w1 * v3w) / interpInvW;
+
+                    const texel = texture.sample(u, v);
+                    const r = texel & 0xFF;
+                    const g = (texel >> 8) & 0xFF;
+                    const b = (texel >> 16) & 0xFF;
+
+                    const litR = (r * litLum) | 0;
+                    const litG = (g * litLum) | 0;
+                    const litB = (b * litLum) | 0;
+
+                    depth[index] = z;
+                    pixels[index] = (255 << 24) | (litB << 16) | (litG << 8) | litR;
+                }
+            }
+
+            w1 += dw1_dx;
+            w2 += dw2_dx;
+            index++;
+        }
+
         w1_row += dw1_dy;
         w2_row += dw2_dy;
     }

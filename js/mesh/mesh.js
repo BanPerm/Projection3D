@@ -1,5 +1,5 @@
 import { Vector3D } from "../math.js";
-import { Triangle } from "../triangle.js";
+import { Triangle, UV } from "../triangle.js";
 
 export class SubMesh {
     constructor(name) {
@@ -60,6 +60,7 @@ export class Mesh {
             const text = await response.text();
             const lines = text.split('\n');
             const verts = [];
+            const uvs = [];
             let count = 0;
             
             let currentSubMesh = new SubMesh("default");
@@ -72,20 +73,40 @@ export class Mesh {
                     const y = parseFloat(tokens[2]);
                     const z = parseFloat(tokens[3]);
                     verts.push(new Vector3D(x, y, z));
+                } else if (tokens[0] === 'vt') {
+                    const u = parseFloat(tokens[1]);
+                    // Convention OBJ : v=0 en bas de la texture. Les buffers image
+                    // (canvas/ImageData) ont, eux, la ligne 0 en haut -> on flip.
+                    const v = 1.0 - parseFloat(tokens[2] ?? 0);
+                    uvs.push(new UV(u, v));
                 } else if (tokens[0] === 'f') {
                     count++;
                     const faceVerts = tokens.slice(1);
 
                     for (let i = 1; i < faceVerts.length - 1; i++) {
-                        const v1Index = parseInt(faceVerts[0].split('/')[0]) - 1;
-                        const v2Index = parseInt(faceVerts[i].split('/')[0]) - 1;
-                        const v3Index = parseInt(faceVerts[i + 1].split('/')[0]) - 1;
+                        const parseIndices = (tok) => {
+                            const parts = tok.split('/');
+                            const vIndex = parseInt(parts[0]) - 1;
+                            // "f v//vn" (pas de vt) ou "f v" (pas de vt ni vn) : on retombe sur (0,0)
+                            const vtIndex = (parts[1] && parts[1] !== '') ? parseInt(parts[1]) - 1 : -1;
+                            return { vIndex, vtIndex };
+                        };
 
-                        currentSubMesh.triangles.push(new Triangle(
-                            verts[v1Index],
-                            verts[v2Index],
-                            verts[v3Index]
-                        ));
+                        const a = parseIndices(faceVerts[0]);
+                        const b = parseIndices(faceVerts[i]);
+                        const c = parseIndices(faceVerts[i + 1]);
+
+                        const tri = new Triangle(
+                            verts[a.vIndex],
+                            verts[b.vIndex],
+                            verts[c.vIndex]
+                        );
+                        tri.setUV(
+                            a.vtIndex >= 0 ? uvs[a.vtIndex] : new UV(0, 0),
+                            b.vtIndex >= 0 ? uvs[b.vtIndex] : new UV(0, 0),
+                            c.vtIndex >= 0 ? uvs[c.vtIndex] : new UV(0, 0)
+                        );
+                        currentSubMesh.triangles.push(tri);
                     }
                 } else if (tokens[0] === 'o' || tokens[0] === 'g') {
                     if (currentSubMesh.triangles.length > 0) {

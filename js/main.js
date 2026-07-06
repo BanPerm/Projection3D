@@ -157,32 +157,34 @@ function displayFPS() {
 
 // Plusieurs instances, partageant le même .obj chargé une seule fois,
 // chacune avec sa propre position/rotation.
-const entities = [
-    new MeshInstance("object/voiture.obj"),
-    new MeshInstance("object/voiture.obj"),
-    new MeshInstance("object/voiture.obj"),
-];
-
 /*
 const entities = [
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
-    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/voiture.obj"),
+    new MeshInstance("object/voiture.obj"),
     new MeshInstance("object/voiture.obj"),
 ];
 */
 
 
+const entities = [
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/voiture.obj"),
+];
+
+
+/*
 entities[0].transform.setPosition(0, 0, 10);
 entities[1].transform.setPosition(20, 0, 10);
 entities[2].transform.setPosition(-20, 0, 25).setRotation(0, Math.PI / 4, 0);
+*/
 
-/*
 entities[0].transform.setPosition(0, 0, 0);
 for(let i=1;i<entities.length-1;i++){
     let x = 150*i
@@ -192,7 +194,7 @@ for(let i=1;i<entities.length-1;i++){
 entities[0].texturePath = "texture/cottage_diffuse.png";
 entities[1].texturePath = "texture/test.png";
 entities[8].transform.setPosition(50, 3, 5)
-*/
+
 
 Promise.all(entities.map(e => e.create())).then(() => {
     animate();

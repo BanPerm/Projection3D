@@ -116,7 +116,7 @@ export class Vector3D {
         return v1.x * v2.x + v1.y * v2.y + v1.z * v2.z;
     }
 
-    static intersectPlane(plane_p, plane_n, lineStart, lineEnd, out = new Vector3D()) {
+    static intersectPlane(plane_p, plane_n, lineStart, lineEnd, out = new Vector3D(), tHolder = null) {
         plane_n.normalise();
         const plane_dot = Vector3D.dotProduct(plane_n, plane_p);
         const ad = Vector3D.dotProduct(lineStart, plane_n);
@@ -131,7 +131,11 @@ export class Vector3D {
         out.y = lineStart.y + lineToIntersect.y;
         out.z = lineStart.z + lineToIntersect.z;
         out.w = lineStart.w + (lineEnd.w - lineStart.w) * t;
-    
+
+        // Utilisé par le clipping des attributs (UV, futures normales par sommet...)
+        // qui doivent être interpolés avec le MÊME t que la position.
+        if (tHolder) tHolder.t = t;
+
         return out;
     }
 

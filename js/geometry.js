@@ -1,5 +1,5 @@
 import { Matrice, Vector3D } from "./math.js";
-import { rasterizeTriangle } from "./renderer.js";
+import { rasterizeTriangle, rasterizeTriangleTextured } from "./renderer.js";
 import { CONFIG, engineState, PROJECTION } from "./state.js";
 import { Triangle } from "./triangle.js";
 import { clipTriangleAgainstFrustum, updateFrustumPlanes } from "./clipping.js";
@@ -24,6 +24,7 @@ const vLightDirView = new Vector3D(0, 0, 0, 0);
 const vNormal = new Vector3D();
 const vLine1 = new Vector3D();
 const vLine2 = new Vector3D();
+const invWScratch = [0, 0, 0]; // réutilisé à chaque sous-triangle, pas de new Array par frame
 
 /**
  * À appeler UNE FOIS PAR FRAME (pas par entité).
@@ -69,7 +70,13 @@ export function computeEntityModelView(entity) {
     return entity.matModelView;
 }
 
-export function projectAndStoreTriangle(triangles, matModelView) {
+/**
+ * @param {Triangle[]} triangles
+ * @param {Float32Array} matModelView
+ * @param {Texture|null} texture - si fourni, les triangles sont texturés
+ *        (perspective-correcte) au lieu d'être rendus en couleur plate.
+ */
+export function projectAndStoreTriangle(triangles, matModelView, texture = null) {
     Triangle.resetPool();
 
     for (let i = 0; i < triangles.length; i++) {
@@ -79,6 +86,10 @@ export function projectAndStoreTriangle(triangles, matModelView) {
         Matrice.matriceMultiplyVector(matModelView, tri.pos[0], triViewed.pos[0]);
         Matrice.matriceMultiplyVector(matModelView, tri.pos[1], triViewed.pos[1]);
         Matrice.matriceMultiplyVector(matModelView, tri.pos[2], triViewed.pos[2]);
+        // Les UV ne dépendent pas de la transformation 3D : simple copie.
+        triViewed.uv[0].copy(tri.uv[0]);
+        triViewed.uv[1].copy(tri.uv[1]);
+        triViewed.uv[2].copy(tri.uv[2]);
 
         // Normale de face calculée directement en espace vue
         Vector3D.sub(triViewed.pos[1], triViewed.pos[0], vLine1);
@@ -93,33 +104,34 @@ export function projectAndStoreTriangle(triangles, matModelView) {
             const dp = Math.max(0.2, Vector3D.dotProduct(vLightDirView, vNormal));
             const faceColor = (tri.color === 'white') ? getColour(dp) : tri.color;
 
-            // Clipping complet contre les 6 plans du frustum. Le polygone résultant
-            // tient dans un buffer fixe de 9 sommets max (voir clipping.js) :
-            // pas d'explosion combinatoire, pas d'allocation.
-            /*
-            const { buf: clippedVerts, len: clippedLen, wasClipped } = clipTriangleAgainstFrustum(
-                triViewed.pos[0], triViewed.pos[1], triViewed.pos[2]
-            );
-            */
-
-            const { buf: clippedVerts, len: clippedLen } = clipTriangleAgainstFrustum(
-                triViewed.pos[0], triViewed.pos[1], triViewed.pos[2]
+            // Clipping complet contre les 6 plans du frustum (position + UV en parallèle).
+            const { posBuf: clippedPos, uvBuf: clippedUV, len: clippedLen } = clipTriangleAgainstFrustum(
+                triViewed.pos[0], triViewed.pos[1], triViewed.pos[2],
+                triViewed.uv[0], triViewed.uv[1], triViewed.uv[2]
             );
 
             if (clippedLen < 3) continue; // entièrement hors du frustum
 
-            // Triangulation en éventail du polygone (couleur plate : identique pour tous les sous-triangles)
+            // Triangulation en éventail du polygone (couleur/texture identiques pour tous les sous-triangles)
             for (let n = 1; n < clippedLen - 1; n++) {
                 let projectedTri = Triangle.getFromPool();
                 projectedTri.color = faceColor;
 
-                Matrice.matriceMultiplyVector(matProj, clippedVerts[0], projectedTri.pos[0]);
-                Matrice.matriceMultiplyVector(matProj, clippedVerts[n], projectedTri.pos[1]);
-                Matrice.matriceMultiplyVector(matProj, clippedVerts[n + 1], projectedTri.pos[2]);
+                Matrice.matriceMultiplyVector(matProj, clippedPos[0], projectedTri.pos[0]);
+                Matrice.matriceMultiplyVector(matProj, clippedPos[n], projectedTri.pos[1]);
+                Matrice.matriceMultiplyVector(matProj, clippedPos[n + 1], projectedTri.pos[2]);
+                projectedTri.uv[0].copy(clippedUV[0]);
+                projectedTri.uv[1].copy(clippedUV[n]);
+                projectedTri.uv[2].copy(clippedUV[n + 1]);
 
+                // invW : l'inverse du w AVANT division perspective, nécessaire à
+                // l'interpolation perspective-correcte des UV. v.divide(v.w) ne
+                // touche que x,y,z (voir math.js) : v.w reste donc le w original.
+                const invW = invWScratch;
                 for (let p = 0; p < 3; p++) {
                     const v = projectedTri.pos[p];
-                    if (Math.abs(v.w) > 0.0001) v.divide(v.w);
+                    invW[p] = Math.abs(v.w) > 0.0001 ? 1 / v.w : 0;
+                    if (invW[p] !== 0) v.divide(v.w);
                     v.x = (v.x + 1.0) * 0.5 * PROJECTION.width;
                     v.y = (v.y + 1.0) * 0.5 * PROJECTION.height;
                 }
@@ -128,22 +140,22 @@ export function projectAndStoreTriangle(triangles, matModelView) {
                 const p1 = projectedTri.pos[1];
                 const p2 = projectedTri.pos[2];
 
-                // Debug : wasClipped détecte les DEUX cas (2-dedans/1-dehors ET 1-dedans/2-dehors),
-                // contrairement à un test sur clippedLen qui ne voit que la moitié des triangles coupés.
-                /*
-                let debugColor = wasClipped ? 'blue' : faceColor;
-                if (clippedLen>3){
-                    debugColor = wasClipped ? 'yellow' : faceColor;
+                if (texture && texture.isLoaded) {
+                    rasterizeTriangleTextured(
+                        p0.x, p0.y, p0.z, invW[0], projectedTri.uv[0].u, projectedTri.uv[0].v,
+                        p1.x, p1.y, p1.z, invW[1], projectedTri.uv[1].u, projectedTri.uv[1].v,
+                        p2.x, p2.y, p2.z, invW[2], projectedTri.uv[2].u, projectedTri.uv[2].v,
+                        texture, dp
+                    );
+                } else {
+                    rasterizeTriangle(
+                        p0.x, p0.y, p0.z,
+                        p1.x, p1.y, p1.z,
+                        p2.x, p2.y, p2.z,
+                        faceColor,
+                        dp
+                    );
                 }
-                */
-
-                rasterizeTriangle(
-                    p0.x, p0.y, p0.z,
-                    p1.x, p1.y, p1.z,
-                    p2.x, p2.y, p2.z,
-                    faceColor,
-                    dp
-                );
             }
         }
     }

@@ -1,4 +1,5 @@
 import { Vector3D } from "./math.js";
+import { UV } from "./triangle.js";
 import { CONFIG, PROJECTION } from "./state.js";
 
 // Un triangle (3 sommets) clippé contre N plans convexes produit au plus
@@ -14,8 +15,19 @@ function makeVertexBuffer(size) {
     return buf;
 }
 
-const bufA = makeVertexBuffer(MAX_CLIP_VERTICES);
-const bufB = makeVertexBuffer(MAX_CLIP_VERTICES);
+function makeUVBuffer(size) {
+    const buf = new Array(size);
+    for (let i = 0; i < size; i++) buf[i] = new UV();
+    return buf;
+}
+
+const posBufA = makeVertexBuffer(MAX_CLIP_VERTICES);
+const posBufB = makeVertexBuffer(MAX_CLIP_VERTICES);
+const uvBufA = makeUVBuffer(MAX_CLIP_VERTICES);
+const uvBufB = makeUVBuffer(MAX_CLIP_VERTICES);
+
+// Réutilisé à chaque intersection pour récupérer le paramètre t sans allouer
+const tHolder = { t: 0 };
 
 // Les 6 plans, en espace VUE (caméra à l'origine, regard vers +Z).
 // Recalculés seulement quand fovRad/aspectRatio changent (resize), pas par frame.
@@ -56,70 +68,80 @@ export function updateFrustumPlanes() {
 }
 
 /**
- * Clippe le polygone `inBuf[0..inLen)` contre un plan, écrit le résultat
- * dans `outBuf` (préalloué), retourne la nouvelle longueur.
- * Aucune allocation : on mute les Vector3D déjà présents dans outBuf.
+ * Clippe le polygone `posIn[0..inLen)` (+ ses UV en parallèle dans `uvIn`)
+ * contre un plan. Écrit le résultat dans `posOut`/`uvOut` (préalloués).
+ * L'UV d'un point d'intersection est interpolée avec le MÊME t que la
+ * position (linéaire en espace vue : correct ici, la perspective sera
+ * gérée séparément au moment de la rasterisation).
  */
-function clipPolygonAgainstPlane(inBuf, inLen, planeP, planeN, outBuf) {
+function clipPolygonAgainstPlane(posIn, uvIn, inLen, planeP, planeN, posOut, uvOut) {
     let outLen = 0;
-    //let anyOutside = false; // vrai si au moins un sommet était hors de ce plan
+    let anyOutside = false;
 
     for (let i = 0; i < inLen; i++) {
-        const curr = inBuf[i];
-        const next = inBuf[(i + 1) % inLen];
+        const currPos = posIn[i], currUV = uvIn[i];
+        const nextIdx = (i + 1) % inLen;
+        const nextPos = posIn[nextIdx], nextUV = uvIn[nextIdx];
 
-        const dCurr = planeN.x * (curr.x - planeP.x) + planeN.y * (curr.y - planeP.y) + planeN.z * (curr.z - planeP.z);
-        const dNext = planeN.x * (next.x - planeP.x) + planeN.y * (next.y - planeP.y) + planeN.z * (next.z - planeP.z);
+        const dCurr = planeN.x * (currPos.x - planeP.x) + planeN.y * (currPos.y - planeP.y) + planeN.z * (currPos.z - planeP.z);
+        const dNext = planeN.x * (nextPos.x - planeP.x) + planeN.y * (nextPos.y - planeP.y) + planeN.z * (nextPos.z - planeP.z);
 
         const currInside = dCurr >= 0;
         const nextInside = dNext >= 0;
 
-        //if (!currInside) anyOutside = true;
+        if (!currInside) anyOutside = true;
 
         if (currInside) {
-            if (outLen >= outBuf.length) { console.warn('clipPolygonAgainstPlane: buffer plein, sommet ignoré'); }
-            else outBuf[outLen++].copy(curr);
+            if (outLen >= posOut.length) { console.warn('clipPolygonAgainstPlane: buffer plein, sommet ignoré'); }
+            else {
+                posOut[outLen].copy(currPos);
+                uvOut[outLen].copy(currUV);
+                outLen++;
+            }
         }
 
         if (currInside !== nextInside) {
-            if (outLen >= outBuf.length) { console.warn('clipPolygonAgainstPlane: buffer plein, intersection ignorée'); }
-            else Vector3D.intersectPlane(planeP, planeN, curr, next, outBuf[outLen++]);
+            if (outLen >= posOut.length) { console.warn('clipPolygonAgainstPlane: buffer plein, intersection ignorée'); }
+            else {
+                Vector3D.intersectPlane(planeP, planeN, currPos, nextPos, posOut[outLen], tHolder);
+                const t = tHolder.t;
+                uvOut[outLen].set(
+                    currUV.u + (nextUV.u - currUV.u) * t,
+                    currUV.v + (nextUV.v - currUV.v) * t
+                );
+                outLen++;
+            }
         }
     }
 
-    // Si rien n'était dehors, le polygone de sortie est identique à l'entrée :
-    // pas la peine de comparer sommet par sommet, "anyOutside" suffit à savoir
-    // si CE plan a modifié quelque chose.
-    //return { len: outLen, changed: anyOutside };
-    return outLen;
+    return { len: outLen, changed: anyOutside };
 }
 
 /**
- * Clippe un triangle (3 Vector3D) contre les 6 plans du frustum.
- * Retourne { buf, len } : buf est l'un des deux buffers internes (bufA/bufB),
- * valide UNIQUEMENT jusqu'au prochain appel (comme les autres scratch du moteur).
+ * Clippe un triangle (3 positions + 3 UV) contre les 6 plans du frustum.
+ * Retourne { posBuf, uvBuf, len, wasClipped }. Les buffers sont internes
+ * (posBufA/B, uvBufA/B), valides UNIQUEMENT jusqu'au prochain appel.
  * len === 0 signifie "entièrement en dehors, rien à dessiner".
  */
-export function clipTriangleAgainstFrustum(p0, p1, p2) {
-    bufA[0].copy(p0);
-    bufA[1].copy(p1);
-    bufA[2].copy(p2);
+export function clipTriangleAgainstFrustum(p0, p1, p2, uv0, uv1, uv2) {
+    posBufA[0].copy(p0); uvBufA[0].copy(uv0);
+    posBufA[1].copy(p1); uvBufA[1].copy(uv1);
+    posBufA[2].copy(p2); uvBufA[2].copy(uv2);
 
-    let curBuf = bufA, curLen = 3;
-    let nextBuf = bufB;
-    //let wasClipped = false;
+    let curPos = posBufA, curUV = uvBufA, curLen = 3;
+    let nextPos = posBufB, nextUV = uvBufB;
+    let wasClipped = false;
 
     for (let i = 0; i < planes.length; i++) {
         const plane = planes[i];
-        const newLen = clipPolygonAgainstPlane(curBuf, curLen, plane.p, plane.n, nextBuf);
-        //if (changed) wasClipped = true;
-        if (newLen === 0) return { buf: curBuf, len: 0 };
+        const { len: newLen, changed } = clipPolygonAgainstPlane(curPos, curUV, curLen, plane.p, plane.n, nextPos, nextUV);
+        if (changed) wasClipped = true;
+        if (newLen === 0) return { posBuf: curPos, uvBuf: curUV, len: 0, wasClipped: true };
 
-        const tmp = curBuf;
-        curBuf = nextBuf;
-        nextBuf = tmp;
+        let tmp = curPos; curPos = nextPos; nextPos = tmp;
+        tmp = curUV; curUV = nextUV; nextUV = tmp;
         curLen = newLen;
     }
 
-    return { buf: curBuf, len: curLen };
+    return { posBuf: curPos, uvBuf: curUV, len: curLen, wasClipped };
 }

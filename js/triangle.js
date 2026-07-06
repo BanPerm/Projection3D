@@ -1,11 +1,39 @@
 import { Vector3D } from "./math.js";
 
+// Coordonnées de texture d'un sommet. Classe séparée de Vector3D (pas besoin
+// de z/w ici) mais avec la même logique de pooling/mutation en place.
+export class UV {
+    constructor(u = 0, v = 0) {
+        this.u = u;
+        this.v = v;
+    }
+
+    copy(uv) {
+        this.u = uv.u;
+        this.v = uv.v;
+        return this;
+    }
+
+    set(u, v) {
+        this.u = u;
+        this.v = v;
+        return this;
+    }
+}
+
 export class Triangle {
-    constructor(p1, p2, p3) {
+    constructor(p1, p2, p3, uv1, uv2, uv3) {
         this.pos = [
             p1 || new Vector3D(),
             p2 || new Vector3D(),
             p3 || new Vector3D()
+        ];
+        // UV par défaut à (0,0) : un mesh sans coordonnées de texture reste
+        // valide, il utilisera simplement le rendu couleur plate existant.
+        this.uv = [
+            uv1 || new UV(),
+            uv2 || new UV(),
+            uv3 || new UV()
         ];
         this.color = 'white';
     }
@@ -31,6 +59,9 @@ export class Triangle {
         this.pos[0].copy(triangle.pos[0]);
         this.pos[1].copy(triangle.pos[1]);
         this.pos[2].copy(triangle.pos[2]);
+        this.uv[0].copy(triangle.uv[0]);
+        this.uv[1].copy(triangle.uv[1]);
+        this.uv[2].copy(triangle.uv[2]);
         this.color = triangle.color;
         return this;
     }
@@ -39,6 +70,13 @@ export class Triangle {
         this.pos[0].copy(p1);
         this.pos[1].copy(p2);
         this.pos[2].copy(p3);
+        return this;
+    }
+
+    setUV(uv1, uv2, uv3) {
+        this.uv[0].copy(uv1);
+        this.uv[1].copy(uv2);
+        this.uv[2].copy(uv3);
         return this;
     }
 }
