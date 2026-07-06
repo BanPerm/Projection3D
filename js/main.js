@@ -44,8 +44,8 @@ function handleMouseMove(event) {
         engineState.yaw += deltaX * sensitivity;
         engineState.pitch -= deltaY * sensitivity;
 
-        const maxPitch = Math.PI / 2;
-        const minPitch = -Math.PI / 2;
+        const maxPitch = Math.PI / 2 - 0.001;
+        const minPitch = -Math.PI / 2 + 0.001;
 
         engineState.pitch = Math.max(minPitch, Math.min(maxPitch, engineState.pitch));
     }
@@ -163,9 +163,36 @@ const entities = [
     new MeshInstance("object/voiture.obj"),
 ];
 
+/*
+const entities = [
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/house_texture.obj"),
+    new MeshInstance("object/voiture.obj"),
+];
+*/
+
+
 entities[0].transform.setPosition(0, 0, 10);
 entities[1].transform.setPosition(20, 0, 10);
 entities[2].transform.setPosition(-20, 0, 25).setRotation(0, Math.PI / 4, 0);
+
+/*
+entities[0].transform.setPosition(0, 0, 0);
+for(let i=1;i<entities.length-1;i++){
+    let x = 150*i
+    entities[i].transform.setPosition(x, 0, 0);
+}
+
+entities[0].texturePath = "texture/cottage_diffuse.png";
+entities[1].texturePath = "texture/test.png";
+entities[8].transform.setPosition(50, 3, 5)
+*/
 
 Promise.all(entities.map(e => e.create())).then(() => {
     animate();
