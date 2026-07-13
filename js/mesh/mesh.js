@@ -61,10 +61,17 @@ export class Mesh {
             const lines = text.split('\n');
             const verts = [];
             const uvs = [];
+            const normals = [];   // 'vn' du fichier, si présentes
+            let hasFileNormals = false;
             let count = 0;
-            
+
+            // On ne construit pas les Triangle tout de suite : on ne sait
+            // qu'à la toute fin du fichier si des 'vn' existent ou non, donc
+            // on stocke d'abord juste les indices de chaque face.
             let currentSubMesh = new SubMesh("default");
             this.subMeshes.push(currentSubMesh);
+            const pendingFaces = []; // { subMesh, a:{vIndex,vtIndex,vnIndex}, b:{...}, c:{...} }
+            const subMeshBoundaries = []; // pour recréer les bounding sphere par sous-mesh à la fin
 
             lines.forEach(line => {
                 const tokens = line.trim().split(/\s+/);
@@ -79,6 +86,9 @@ export class Mesh {
                     // (canvas/ImageData) ont, eux, la ligne 0 en haut -> on flip.
                     const v = 1.0 - parseFloat(tokens[2] ?? 0);
                     uvs.push(new UV(u, v));
+                } else if (tokens[0] === 'vn') {
+                    hasFileNormals = true;
+                    normals.push(new Vector3D(parseFloat(tokens[1]), parseFloat(tokens[2]), parseFloat(tokens[3])));
                 } else if (tokens[0] === 'f') {
                     count++;
                     const faceVerts = tokens.slice(1);
@@ -87,38 +97,70 @@ export class Mesh {
                         const parseIndices = (tok) => {
                             const parts = tok.split('/');
                             const vIndex = parseInt(parts[0]) - 1;
-                            // "f v//vn" (pas de vt) ou "f v" (pas de vt ni vn) : on retombe sur (0,0)
+                            // "f v//vn" (pas de vt) ou "f v" (pas de vt ni vn) : on retombe sur -1
                             const vtIndex = (parts[1] && parts[1] !== '') ? parseInt(parts[1]) - 1 : -1;
-                            return { vIndex, vtIndex };
+                            const vnIndex = (parts[2] && parts[2] !== '') ? parseInt(parts[2]) - 1 : -1;
+                            return { vIndex, vtIndex, vnIndex };
                         };
 
-                        const a = parseIndices(faceVerts[0]);
-                        const b = parseIndices(faceVerts[i]);
-                        const c = parseIndices(faceVerts[i + 1]);
-
-                        const tri = new Triangle(
-                            verts[a.vIndex],
-                            verts[b.vIndex],
-                            verts[c.vIndex]
-                        );
-                        tri.setUV(
-                            a.vtIndex >= 0 ? uvs[a.vtIndex] : new UV(0, 0),
-                            b.vtIndex >= 0 ? uvs[b.vtIndex] : new UV(0, 0),
-                            c.vtIndex >= 0 ? uvs[c.vtIndex] : new UV(0, 0)
-                        );
-                        currentSubMesh.triangles.push(tri);
+                        pendingFaces.push({
+                            subMesh: currentSubMesh,
+                            a: parseIndices(faceVerts[0]),
+                            b: parseIndices(faceVerts[i]),
+                            c: parseIndices(faceVerts[i + 1])
+                        });
                     }
                 } else if (tokens[0] === 'o' || tokens[0] === 'g') {
-                    if (currentSubMesh.triangles.length > 0) {
-                        currentSubMesh.computeBoundingSphere();
-                    }
                     currentSubMesh = new SubMesh(line.split(' ')[1]);
                     this.subMeshes.push(currentSubMesh);
                 }
-                    
+
             });
-            currentSubMesh.computeBoundingSphere();
-            console.log(`Loaded ${count} faces from ${filePath}`);
+
+            // Si le fichier ne fournit pas de normales, on les calcule :
+            // moyenne (non normalisée, donc naturellement pondérée par l'aire)
+            // des normales de toutes les faces adjacentes à chaque sommet.
+            let computedVertexNormals = null;
+            if (!hasFileNormals) {
+                computedVertexNormals = verts.map(() => new Vector3D(0, 0, 0));
+                const edge1 = new Vector3D(), edge2 = new Vector3D(), faceNormal = new Vector3D();
+                for (const face of pendingFaces) {
+                    const pa = verts[face.a.vIndex], pb = verts[face.b.vIndex], pc = verts[face.c.vIndex];
+                    Vector3D.sub(pb, pa, edge1);
+                    Vector3D.sub(pc, pa, edge2);
+                    Vector3D.crossProduct(edge1, edge2, faceNormal); // pas de normalise() : aire = poids naturel
+                    Vector3D.add(computedVertexNormals[face.a.vIndex], faceNormal, computedVertexNormals[face.a.vIndex]);
+                    Vector3D.add(computedVertexNormals[face.b.vIndex], faceNormal, computedVertexNormals[face.b.vIndex]);
+                    Vector3D.add(computedVertexNormals[face.c.vIndex], faceNormal, computedVertexNormals[face.c.vIndex]);
+                }
+                for (const n of computedVertexNormals) {
+                    if (n.lengthVector() > 0) n.normalise();
+                    else n.set(0, 0, -1); // sommet isolé (ne devrait pas arriver) : valeur de repli sûre
+                }
+            }
+
+            const getNormal = (idx) => {
+                if (hasFileNormals && idx.vnIndex >= 0) return normals[idx.vnIndex];
+                return computedVertexNormals[idx.vIndex]; // repli : normale de sommet calculée
+            };
+
+            for (const face of pendingFaces) {
+                const tri = new Triangle(
+                    verts[face.a.vIndex], verts[face.b.vIndex], verts[face.c.vIndex]
+                );
+                tri.setUV(
+                    face.a.vtIndex >= 0 ? uvs[face.a.vtIndex] : new UV(0, 0),
+                    face.b.vtIndex >= 0 ? uvs[face.b.vtIndex] : new UV(0, 0),
+                    face.c.vtIndex >= 0 ? uvs[face.c.vtIndex] : new UV(0, 0)
+                );
+                tri.setNormals(getNormal(face.a), getNormal(face.b), getNormal(face.c));
+                face.subMesh.triangles.push(tri);
+            }
+
+            for (const sub of this.subMeshes) {
+                sub.computeBoundingSphere();
+            }
+            console.log(`Loaded ${count} faces from ${filePath} (normales : ${hasFileNormals ? 'fichier' : 'calculées'})`);
 
             this.computeGlobalBoundingSphere();
         } catch (error) {

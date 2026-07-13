@@ -25,6 +25,9 @@ const posBufA = makeVertexBuffer(MAX_CLIP_VERTICES);
 const posBufB = makeVertexBuffer(MAX_CLIP_VERTICES);
 const uvBufA = makeUVBuffer(MAX_CLIP_VERTICES);
 const uvBufB = makeUVBuffer(MAX_CLIP_VERTICES);
+// Intensité lumineuse par sommet (Gouraud)
+const lumBufA = new Float64Array(MAX_CLIP_VERTICES);
+const lumBufB = new Float64Array(MAX_CLIP_VERTICES);
 
 // Réutilisé à chaque intersection pour récupérer le paramètre t sans allouer
 const tHolder = { t: 0 };
@@ -74,14 +77,14 @@ export function updateFrustumPlanes() {
  * position (linéaire en espace vue : correct ici, la perspective sera
  * gérée séparément au moment de la rasterisation).
  */
-function clipPolygonAgainstPlane(posIn, uvIn, inLen, planeP, planeN, posOut, uvOut) {
+function clipPolygonAgainstPlane(posIn, uvIn, lumIn, inLen, planeP, planeN, posOut, uvOut, lumOut) {
     let outLen = 0;
     let anyOutside = false;
 
     for (let i = 0; i < inLen; i++) {
-        const currPos = posIn[i], currUV = uvIn[i];
+        const currPos = posIn[i], currUV = uvIn[i], currLum = lumIn[i];
         const nextIdx = (i + 1) % inLen;
-        const nextPos = posIn[nextIdx], nextUV = uvIn[nextIdx];
+        const nextPos = posIn[nextIdx], nextUV = uvIn[nextIdx], nextLum = lumIn[nextIdx];
 
         const dCurr = planeN.x * (currPos.x - planeP.x) + planeN.y * (currPos.y - planeP.y) + planeN.z * (currPos.z - planeP.z);
         const dNext = planeN.x * (nextPos.x - planeP.x) + planeN.y * (nextPos.y - planeP.y) + planeN.z * (nextPos.z - planeP.z);
@@ -96,6 +99,7 @@ function clipPolygonAgainstPlane(posIn, uvIn, inLen, planeP, planeN, posOut, uvO
             else {
                 posOut[outLen].copy(currPos);
                 uvOut[outLen].copy(currUV);
+                lumOut[outLen] = currLum;
                 outLen++;
             }
         }
@@ -109,6 +113,7 @@ function clipPolygonAgainstPlane(posIn, uvIn, inLen, planeP, planeN, posOut, uvO
                     currUV.u + (nextUV.u - currUV.u) * t,
                     currUV.v + (nextUV.v - currUV.v) * t
                 );
+                lumOut[outLen] = currLum + (nextLum - currLum) * t;
                 outLen++;
             }
         }
@@ -123,25 +128,26 @@ function clipPolygonAgainstPlane(posIn, uvIn, inLen, planeP, planeN, posOut, uvO
  * (posBufA/B, uvBufA/B), valides UNIQUEMENT jusqu'au prochain appel.
  * len === 0 signifie "entièrement en dehors, rien à dessiner".
  */
-export function clipTriangleAgainstFrustum(p0, p1, p2, uv0, uv1, uv2) {
-    posBufA[0].copy(p0); uvBufA[0].copy(uv0);
-    posBufA[1].copy(p1); uvBufA[1].copy(uv1);
-    posBufA[2].copy(p2); uvBufA[2].copy(uv2);
+export function clipTriangleAgainstFrustum(p0, p1, p2, uv0, uv1, uv2, lum0, lum1, lum2) {
+    posBufA[0].copy(p0); uvBufA[0].copy(uv0); lumBufA[0] = lum0;
+    posBufA[1].copy(p1); uvBufA[1].copy(uv1); lumBufA[1] = lum1;
+    posBufA[2].copy(p2); uvBufA[2].copy(uv2); lumBufA[2] = lum2;
 
-    let curPos = posBufA, curUV = uvBufA, curLen = 3;
-    let nextPos = posBufB, nextUV = uvBufB;
+    let curPos = posBufA, curUV = uvBufA, curLum = lumBufA, curLen = 3;
+    let nextPos = posBufB, nextUV = uvBufB, nextLum = lumBufB;
     let wasClipped = false;
 
     for (let i = 0; i < planes.length; i++) {
         const plane = planes[i];
-        const { len: newLen, changed } = clipPolygonAgainstPlane(curPos, curUV, curLen, plane.p, plane.n, nextPos, nextUV);
+        const { len: newLen, changed } = clipPolygonAgainstPlane(curPos, curUV, curLum, curLen, plane.p, plane.n, nextPos, nextUV, nextLum);
         if (changed) wasClipped = true;
-        if (newLen === 0) return { posBuf: curPos, uvBuf: curUV, len: 0, wasClipped: true };
+        if (newLen === 0) return { posBuf: curPos, uvBuf: curUV, lumBuf: curLum, len: 0, wasClipped: true };
 
         let tmp = curPos; curPos = nextPos; nextPos = tmp;
         tmp = curUV; curUV = nextUV; nextUV = tmp;
+        tmp = curLum; curLum = nextLum; nextLum = tmp;
         curLen = newLen;
     }
 
-    return { posBuf: curPos, uvBuf: curUV, len: curLen, wasClipped };
+    return { posBuf: curPos, uvBuf: curUV, lumBuf: curLum, len: curLen, wasClipped };
 }

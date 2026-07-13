@@ -22,7 +22,7 @@ export class UV {
 }
 
 export class Triangle {
-    constructor(p1, p2, p3, uv1, uv2, uv3) {
+    constructor(p1, p2, p3, uv1, uv2, uv3, n1, n2, n3) {
         this.pos = [
             p1 || new Vector3D(),
             p2 || new Vector3D(),
@@ -34,6 +34,15 @@ export class Triangle {
             uv1 || new UV(),
             uv2 || new UV(),
             uv3 || new UV()
+        ];
+        // Normale par sommet (Gouraud). Par défaut (0,0,-1) : si jamais un
+        // triangle est construit sans normales explicites, ça reste une
+        // valeur unitaire valide plutôt qu'un vecteur nul qui casserait
+        // le calcul de lumière (dot product avec un vecteur nul = 0 partout).
+        this.normal = [
+            n1 || new Vector3D(0, 0, -1),
+            n2 || new Vector3D(0, 0, -1),
+            n3 || new Vector3D(0, 0, -1)
         ];
         this.color = 'white';
     }
@@ -62,6 +71,9 @@ export class Triangle {
         this.uv[0].copy(triangle.uv[0]);
         this.uv[1].copy(triangle.uv[1]);
         this.uv[2].copy(triangle.uv[2]);
+        this.normal[0].copy(triangle.normal[0]);
+        this.normal[1].copy(triangle.normal[1]);
+        this.normal[2].copy(triangle.normal[2]);
         this.color = triangle.color;
         return this;
     }
@@ -77,6 +89,13 @@ export class Triangle {
         this.uv[0].copy(uv1);
         this.uv[1].copy(uv2);
         this.uv[2].copy(uv3);
+        return this;
+    }
+
+    setNormals(n1, n2, n3) {
+        this.normal[0].copy(n1);
+        this.normal[1].copy(n2);
+        this.normal[2].copy(n3);
         return this;
     }
 }

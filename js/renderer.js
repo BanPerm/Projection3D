@@ -58,9 +58,12 @@ export function drawBufferToCanvas(ctx) {
 const CULLING_SENS = 1;
 
 /**
- * Rasterise un triangle en mode couleur plate (comportement historique, inchangé).
+ * Rasterise un triangle en couleur plate MAIS avec intensité lumineuse
+ * interpolée par sommet (Gouraud), perspective-correcte comme pour les UV.
+ * invW1/2/3 = 1/w original (avant division perspective), lum1/2/3 = intensité
+ * calculée à chaque sommet (0.2 à 1.0, voir geometry.js).
  */
-export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData, lum = 1.0) {
+export function rasterizeTriangle(x1, y1, z1, invW1, lum1, x2, y2, z2, invW2, lum2, x3, y3, z3, invW3, lum3, colorData) {
     if (isNaN(x1) || isNaN(x2) || isNaN(x3) || isNaN(y1) || isNaN(y2) || isNaN(y3)) return;
 
     const width = RENDER_BUFFER.width;
@@ -71,9 +74,6 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
     // Pré-calculs pour les coordonnées barycentriques (aire du triangle)
     const area = (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
     if (Math.abs(area) < 0.0001) return;
-
-    // Si le triangle est orienté dans le mauvais sens, on peut l'ignorer (back-face culling)
-    //if (area * CULLING_SENS > 0) return;
 
     // 1. Bounding Box : On ne scanne que le rectangle autour du triangle
     let minX = Math.floor(Math.min(x1, x2, x3));
@@ -90,7 +90,15 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
     if (minX > maxX || minY > maxY) return;
 
     const invArea = 1.0 / area;
-    const colorInt = colorToInt(colorData, lum);
+    // Couleur de base (sans lumière, lum=1) : on applique l'intensité interpolée
+    // pixel par pixel, comme le rasterizer texturé applique litLum au texel.
+    const baseColorInt = colorToInt(colorData, 1.0);
+    const baseR = baseColorInt & 0xFF;
+    const baseG = (baseColorInt >> 8) & 0xFF;
+    const baseB = (baseColorInt >> 16) & 0xFF;
+
+    // Attributs pré-divisés par w pour l'interpolation perspective-correcte
+    const lum1w = lum1 * invW1, lum2w = lum2 * invW2, lum3w = lum3 * invW3;
 
     // Utilisation de  PINEDA
 
@@ -116,7 +124,6 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
 
             // Test d'appartenance
             if (w1 >= 0 && w2 >= 0 && w3 >= 0) {
-                // Interpolation linéaire de la profondeur.
                 // ATTENTION : à cause de la définition des edge functions ci-dessus,
                 // w1 correspond en réalité au sommet 3, w2 au sommet 1, w3 au sommet 2
                 // (rotation cyclique). Vérifié empiriquement : w1=1 au sommet 3, pas au sommet 1.
@@ -124,8 +131,15 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
 
                 // Test de profondeur (Early Z)
                 if (z < depth[index]) {
+                    const interpInvW = w2 * invW1 + w3 * invW2 + w1 * invW3;
+                    const lum = (w2 * lum1w + w3 * lum2w + w1 * lum3w) / interpInvW;
+
+                    const r = (baseR * lum) | 0;
+                    const g = (baseG * lum) | 0;
+                    const b = (baseB * lum) | 0;
+
                     depth[index] = z;
-                    pixels[index] = colorInt;
+                    pixels[index] = (255 << 24) | (b << 16) | (g << 8) | r;
                 }
             }
             
@@ -146,13 +160,13 @@ export function rasterizeTriangle(x1, y1, z1, x2, y2, z2, x3, y3, z3, colorData,
  * (x,y,z) sont les coordonnées écran/NDC habituelles (post perspective-divide).
  * invW est l'inverse du w original AVANT la division perspective (1/w),
  * u/v sont les coordonnées de texture brutes de chaque sommet.
- * lum applique l'éclairage directionnel existant (même formule que le mode couleur plate).
+ * lum1/2/3 : intensité lumineuse par sommet (Gouraud), interpolée comme les UV.
  */
 export function rasterizeTriangleTextured(
-    x1, y1, z1, invW1, u1, v1,
-    x2, y2, z2, invW2, u2, v2,
-    x3, y3, z3, invW3, u3, v3,
-    texture, lum = 1.0
+    x1, y1, z1, invW1, u1, v1, lum1,
+    x2, y2, z2, invW2, u2, v2, lum2,
+    x3, y3, z3, invW3, u3, v3, lum3,
+    texture
 ) {
     if (isNaN(x1) || isNaN(x2) || isNaN(x3) || isNaN(y1) || isNaN(y2) || isNaN(y3)) return;
 
@@ -178,10 +192,7 @@ export function rasterizeTriangleTextured(
     const u1w = u1 * invW1, v1w = v1 * invW1;
     const u2w = u2 * invW2, v2w = v2 * invW2;
     const u3w = u3 * invW3, v3w = v3 * invW3;
-
-    // Éclaircissement/assombrissement selon la lumière, appliqué au texel (comme
-    // getColour() le fait pour le flat shading)
-    const litLum = Math.min(1, Math.max(0, lum));
+    const lum1w = lum1 * invW1, lum2w = lum2 * invW2, lum3w = lum3 * invW3;
 
     let w1_row = ((x2 - x1) * (minY - y1) - (y2 - y1) * (minX - x1)) * invArea;
     let w2_row = ((x3 - x2) * (minY - y2) - (y3 - y2) * (minX - x2)) * invArea;
@@ -204,20 +215,21 @@ export function rasterizeTriangleTextured(
                 const z = w2 * z1 + w3 * z2 + w1 * z3;
 
                 if (z < depth[index]) {
-                    // Interpolation perspective-correcte : interpoler 1/w, u/w, v/w
-                    // linéairement en espace écran, puis diviser pour retrouver u,v réels.
+                    // Interpolation perspective-correcte : interpoler 1/w, u/w, v/w, lum/w
+                    // linéairement en espace écran, puis diviser pour retrouver les valeurs réelles.
                     const interpInvW = w2 * invW1 + w3 * invW2 + w1 * invW3;
                     const u = (w2 * u1w + w3 * u2w + w1 * u3w) / interpInvW;
                     const v = (w2 * v1w + w3 * v2w + w1 * v3w) / interpInvW;
+                    const lum = (w2 * lum1w + w3 * lum2w + w1 * lum3w) / interpInvW;
 
                     const texel = texture.sample(u, v);
                     const r = texel & 0xFF;
                     const g = (texel >> 8) & 0xFF;
                     const b = (texel >> 16) & 0xFF;
 
-                    const litR = (r * litLum) | 0;
-                    const litG = (g * litLum) | 0;
-                    const litB = (b * litLum) | 0;
+                    const litR = (r * lum) | 0;
+                    const litG = (g * lum) | 0;
+                    const litB = (b * lum) | 0;
 
                     depth[index] = z;
                     pixels[index] = (255 << 24) | (litB << 16) | (litG << 8) | litR;

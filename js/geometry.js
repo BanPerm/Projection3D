@@ -25,6 +25,9 @@ const vNormal = new Vector3D();
 const vLine1 = new Vector3D();
 const vLine2 = new Vector3D();
 const invWScratch = [0, 0, 0]; // réutilisé à chaque sous-triangle, pas de new Array par frame
+const lumScratch = [0, 0, 0];
+// Normales de sommet transformées en espace vue (Gouraud) + intensité résultante
+const vNormalView = [new Vector3D(), new Vector3D(), new Vector3D()];
 
 /**
  * À appeler UNE FOIS PAR FRAME (pas par entité).
@@ -91,7 +94,8 @@ export function projectAndStoreTriangle(triangles, matModelView, texture = null)
         triViewed.uv[1].copy(tri.uv[1]);
         triViewed.uv[2].copy(tri.uv[2]);
 
-        // Normale de face calculée directement en espace vue
+        // Normale de FACE (espace vue) : sert uniquement au test de face avant/arrière,
+        // le shading utilise les normales par SOMMET ci-dessous (Gouraud).
         Vector3D.sub(triViewed.pos[1], triViewed.pos[0], vLine1);
         Vector3D.sub(triViewed.pos[2], triViewed.pos[0], vLine2);
         Vector3D.crossProduct(vLine1, vLine2, vNormal);
@@ -101,13 +105,27 @@ export function projectAndStoreTriangle(triangles, matModelView, texture = null)
         // le rayon caméra->point est donc simplement triViewed.pos[0].
         if (Vector3D.dotProduct(vNormal, triViewed.pos[0]) < 0) {
 
-            const dp = Math.max(0.2, Vector3D.dotProduct(vLightDirView, vNormal));
-            const faceColor = (tri.color === 'white') ? getColour(dp) : tri.color;
+            // Normales de sommet : on ignore la translation (w=0, même astuce que
+            // pour vLightDirView) puisqu'une normale est une DIRECTION, pas un point.
+            // Valide tant que l'échelle reste uniforme (voir Transform.scale) : une
+            // échelle non-uniforme demanderait la matrice normale (inverse-transposée).
+            for (let p = 0; p < 3; p++) {
+                tri.normal[p].w = 0;
+                Matrice.matriceMultiplyVector(matModelView, tri.normal[p], vNormalView[p]);
+                vNormalView[p].normalise();
+                lumScratch[p] = Math.max(0.2, Vector3D.dotProduct(vLightDirView, vNormalView[p]));
+            }
 
-            // Clipping complet contre les 6 plans du frustum (position + UV en parallèle).
-            const { posBuf: clippedPos, uvBuf: clippedUV, len: clippedLen } = clipTriangleAgainstFrustum(
+            // Couleur de BASE (non éclairée) : l'éclairage est maintenant appliqué
+            // par pixel via l'intensité interpolée (Gouraud), plus par un lum
+            // unique figé sur toute la face.
+            const faceColor = tri.color;
+
+            // Clipping complet contre les 6 plans du frustum (position + UV + intensité en parallèle).
+            const { posBuf: clippedPos, uvBuf: clippedUV, lumBuf: clippedLum, len: clippedLen } = clipTriangleAgainstFrustum(
                 triViewed.pos[0], triViewed.pos[1], triViewed.pos[2],
-                triViewed.uv[0], triViewed.uv[1], triViewed.uv[2]
+                triViewed.uv[0], triViewed.uv[1], triViewed.uv[2],
+                lumScratch[0], lumScratch[1], lumScratch[2]
             );
 
             if (clippedLen < 3) continue; // entièrement hors du frustum
@@ -139,31 +157,26 @@ export function projectAndStoreTriangle(triangles, matModelView, texture = null)
                 const p0 = projectedTri.pos[0];
                 const p1 = projectedTri.pos[1];
                 const p2 = projectedTri.pos[2];
+                const lumA = clippedLum[0], lumB = clippedLum[n], lumC = clippedLum[n + 1];
 
                 if (texture && texture.isLoaded) {
                     rasterizeTriangleTextured(
-                        p0.x, p0.y, p0.z, invW[0], projectedTri.uv[0].u, projectedTri.uv[0].v,
-                        p1.x, p1.y, p1.z, invW[1], projectedTri.uv[1].u, projectedTri.uv[1].v,
-                        p2.x, p2.y, p2.z, invW[2], projectedTri.uv[2].u, projectedTri.uv[2].v,
-                        texture, dp
+                        p0.x, p0.y, p0.z, invW[0], projectedTri.uv[0].u, projectedTri.uv[0].v, lumA,
+                        p1.x, p1.y, p1.z, invW[1], projectedTri.uv[1].u, projectedTri.uv[1].v, lumB,
+                        p2.x, p2.y, p2.z, invW[2], projectedTri.uv[2].u, projectedTri.uv[2].v, lumC,
+                        texture
                     );
                 } else {
                     rasterizeTriangle(
-                        p0.x, p0.y, p0.z,
-                        p1.x, p1.y, p1.z,
-                        p2.x, p2.y, p2.z,
-                        faceColor,
-                        dp
+                        p0.x, p0.y, p0.z, invW[0], lumA,
+                        p1.x, p1.y, p1.z, invW[1], lumB,
+                        p2.x, p2.y, p2.z, invW[2], lumC,
+                        faceColor
                     );
                 }
             }
         }
     }
-}
-
-function getColour(lum) {
-    let grey = Math.floor(255 * lum);
-    return `rgb(${grey}, ${grey}, ${grey})`;
 }
 
 function updateLookDirection() {
